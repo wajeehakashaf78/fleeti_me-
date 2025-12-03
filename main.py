@@ -15,7 +15,7 @@ else:
 # Initialize FleetiHistorySaver
 from FleetiHistorySaver.history_saver import FleetiHistorySaver
 # Hardcoded session ID for now
-SESSION_ID = "default_session_005"
+SESSION_ID = "default_session_007"
 history_saver = FleetiHistorySaver(session_id=SESSION_ID)
 
 # HARD CODED SUB-TENANT ID FOR NOW

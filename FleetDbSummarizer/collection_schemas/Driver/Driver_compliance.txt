@@ -1,0 +1,11 @@
+Collection: Driver
+Fields:
+- compliance.background_check_status: int
+- compliance.background_check_date: BSON Date|null
+- compliance.drug_test_status: int
+- compliance.last_drug_test_date: BSON Date|null
+- compliance.next_drug_test_date: BSON Date|null
+- compliance.violation_history: array
+- compliance.accident_history: array
+- compliance.compliance_flags: array
+

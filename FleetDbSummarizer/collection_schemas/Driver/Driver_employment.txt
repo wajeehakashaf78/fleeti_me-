@@ -1,0 +1,10 @@
+Collection: Driver
+Fields:
+- employment.employee_id: string
+- employment.hire_date: BSON Date
+- employment.employment_type: int
+- employment.department: int
+- employment.work_location: string
+- employment.shift_pattern: int
+- employment.base_salary: float|null
+

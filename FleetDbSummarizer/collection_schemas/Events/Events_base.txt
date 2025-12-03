@@ -1,0 +1,13 @@
+Collection: Events
+Fields:
+- _id: uuid
+- event_type: string
+- sub_tenant_id: string
+- speed: int
+- duration: int
+- timestamp: BSON Date
+- location: { type: "Point", coordinates: [longitude, latitude] }
+- created_at: BSON Date
+- defined_time_window: int
+- device_context.asset_id: string
+- device_context.driver_info.id: string

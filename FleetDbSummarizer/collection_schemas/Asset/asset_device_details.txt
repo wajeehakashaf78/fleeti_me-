@@ -1,0 +1,7 @@
+Collection: Asset
+Fields:
+- device_details.imei: string
+- device_details.group_id: string
+- device_details.group_name: string
+- device_details.device_name: string
+

@@ -21,7 +21,7 @@ PARENT_CHUNK_SIZE = 2048  # Size for parent chunks (Small-to-Big retrieval)
 K_DENSE = 12  # Top K for dense vector search
 K_SPARSE = 12  # Top K for sparse BM25 search
 RRF_K = 60  # Reciprocal Rank Fusion parameter
-TOP_N_RERANK = 12  # Top N documents for re-ranking
+TOP_N_RERANK = 14  # Top N documents for re-ranking
 TOP_K_FINAL = 5  # Final top K chunks to send to LLM
 
 # Model Configuration

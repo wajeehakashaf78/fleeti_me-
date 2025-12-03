@@ -1,0 +1,5 @@
+Collection: Driver
+Fields:
+- status.current_status: int
+- status.availability_status: int
+

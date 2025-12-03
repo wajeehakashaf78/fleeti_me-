@@ -1,0 +1,13 @@
+Collection: Driver
+Fields:
+- profile.first_name: string
+- profile.last_name: string
+- profile.middle_name: string
+- profile.date_of_birth: BSON Date
+- profile.date_of_birth_hijri: BSON Date|null
+- profile.date_of_birth_gregorian: BSON Date|null
+- profile.gender: int
+- profile.nationality: string
+- profile.profile_image: string
+- profile.profile_image_url: string
+

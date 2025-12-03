@@ -1,0 +1,13 @@
+Collection: Geofence
+Fields:
+- _id: uuid
+- name: string
+- description: string
+- type: string
+- status: string
+- coordinates: array<array<float>>
+- radius: float
+- event: int
+- sub_tenant_id: string
+- created_at: BSON Date
+

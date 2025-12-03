@@ -1,0 +1,6 @@
+Collection: Driver
+Fields:
+- emergency.name: string
+- emergency.relationship: string
+- emergency.phone: string
+

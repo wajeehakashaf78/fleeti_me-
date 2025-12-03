@@ -1,0 +1,17 @@
+Collection: Asset
+Fields:
+- _id: uuid
+- asset_id: string (unique identifier, indexed)
+- name: string
+- type: string
+- availability: string
+- device_availability: string
+- category: string
+- sequence_number: string
+- installation_type: string
+- assigned_devices: array<string>|string
+- assigned_users: array<string>|string
+- status: string
+- sub_tenant_id: string
+- created_at: BSON Date
+

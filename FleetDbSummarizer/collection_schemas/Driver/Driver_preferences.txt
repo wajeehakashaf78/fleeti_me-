@@ -1,0 +1,8 @@
+Collection: Driver
+Fields:
+- preferences.communication_preference: int
+- preferences.language: int
+- preferences.timezone: int
+- preferences.work_preferences.weekend_availability: bool
+- preferences.work_preferences.overtime_willingness: bool
+

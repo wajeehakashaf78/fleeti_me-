@@ -1,0 +1,23 @@
+Collection: Trip
+Fields:
+- _id: uuid
+- created_at: BSON Date (indexed)
+- imei: string
+- device_id: string
+- start_at: BSON Date
+- end_at: BSON Date
+- duration: float (seconds)
+- start_location: { type: "Point", coordinates: [longitude, latitude] }
+- start_odometer: int
+- start_fuel_level: int
+- end_location: { type: "Point", coordinates: [longitude, latitude] }
+- end_odometer: int
+- end_fuel_level: int
+- distance_covered: int (meters)
+- distance_covered_orthodromic: float (meters)
+- avg_speed: int
+- max_speed: int
+- idle_time: int (seconds)
+- driver_info.asset_id: string (links to Asset.asset_id - JOIN KEY)
+- driver_info.driver_info.id: string (links to Driver._id)
+

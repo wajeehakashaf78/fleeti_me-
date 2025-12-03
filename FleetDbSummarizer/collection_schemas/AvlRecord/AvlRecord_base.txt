@@ -1,0 +1,31 @@
+Collection: AvlRecord
+Fields:
+- _id: uuid
+- tenant: string
+- device_model_id: string
+- device_id: string
+- imei: string
+- model: string
+- manufacturer: string
+- data_protocol: string
+- group_id: string
+- timestamp: BSON Date (indexed, use for time-based queries)
+- priority: int
+- location: { type: "Point", coordinates: [longitude, latitude] }
+- altitude: int
+- direction_angle: int
+- satellites: int
+- speed: int
+- ignition_status: string ("On" or "Off")
+- gsm_signal: string
+- gps_status: string
+- external_voltage: string
+- total_odometer: string
+- g_sensor: array
+- crash_trace: array
+- movement: string ("On" or "Off")
+- is_processed: bool
+- sub_tenant_id: string
+- device_context.asset_id: string (links to Asset.asset_id)
+- device_context.driver_info.id: string (links to Driver._id)
+

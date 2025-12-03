@@ -1,0 +1,20 @@
+Collection: Driver
+Fields:
+- asset_assignments: array<object>
+- asset_assignments[]._id: uuid (unique asset identifier)
+- asset_assignments[].asset_name: string
+- asset_assignments[].asset_type: string
+- asset_assignments[].asset_category: string
+- asset_assignments[].priority_type: int
+- asset_assignments[].assignment_type: int
+- asset_assignments[].start_date: BSON Date
+- asset_assignments[].end_date: BSON Date
+- asset_assignments[].status: int
+- asset_assignments[].assigned_by: string
+- asset_assignments[].notes: string
+- asset_assignments[].responsibilities: array
+- asset_assignments[].access_level: string|null
+- asset_assignments[].send_notifications: bool
+- asset_assignments[].schedule: bool
+- asset_assignments[].created_at: BSON Date
+

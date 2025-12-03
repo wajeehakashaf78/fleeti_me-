@@ -1,0 +1,9 @@
+Collection: AlertRule
+Fields:
+- assigned_assets: array<object>
+- assigned_assets[].alert_rule_id: string
+- assigned_assets[].asset_id: string
+- assigned_assets[].asset_name: string
+- assigned_assets[].asset_type: string
+- assigned_assets[].created_at: BSON Date
+

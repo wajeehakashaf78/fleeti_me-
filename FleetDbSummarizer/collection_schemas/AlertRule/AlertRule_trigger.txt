@@ -1,0 +1,7 @@
+Collection: AlertRule
+Fields:
+- trigger.trigger_frequency: string
+- trigger.enable_cooldown_period: bool
+- trigger.period: int
+- trigger.units: string
+

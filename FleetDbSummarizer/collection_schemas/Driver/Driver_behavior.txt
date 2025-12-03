@@ -1,0 +1,9 @@
+Collection: Driver
+Fields:
+- behavior.driving_style: int
+- behavior.risk_profile: int
+- behavior.adaptability_score: float|null
+- behavior.stress_level: int
+- behavior.fatigue_risk_level: int
+- behavior.compliance_score: float|null
+

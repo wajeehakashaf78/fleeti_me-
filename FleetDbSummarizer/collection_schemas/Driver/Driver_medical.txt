@@ -1,0 +1,10 @@
+Collection: Driver
+Fields:
+- medical.medical_certificate_expiry: BSON Date
+- medical.medical_certificate_status: int
+- medical.blood_type: int
+- medical.medicial_certification: string
+- medical.allergies: array
+- medical.medications: array
+- medical.fitness_for_duty: int
+

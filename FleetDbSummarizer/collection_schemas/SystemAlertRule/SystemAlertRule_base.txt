@@ -1,0 +1,9 @@
+Collection: SystemAlertRule
+Fields:
+- _id: uuid
+- event_type: string
+- is_enabled: bool
+- time_interval: int
+- created_by: string
+- created_at: BSON Date
+

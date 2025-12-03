@@ -1,0 +1,1109 @@
+version: "3.1"
+
+nlu:
+- intent: request_trips_report
+  examples: |
+    - trips report
+    - trip report
+    - trips statistics report
+    - I need the [trips statistics report](report_type) for [ABC-123](asset) from [05/01/2025](date) to [05/15/2025](date)
+    - please run [trips statistics report](report_type) for vehicle [JKL-908](asset)
+    - can you give me the [trips report](report_type) for plates [KSA-8821](asset) [AAA-119](asset) for [01.05.2025](date)
+    - pull the [trips statistics report](report_type) covering [05 January 2025](date)
+    - generate a [trips stats report](report_type) on [AB-1111](asset) between [05-01-2025](date) and [05-15-2025](date)
+    - give me the [trips data report](report_type) for [ABC-123](asset) for [yesterday](date)
+    - I need a [trip statistics report](report_type) on [TRK908](asset) for [last 7 days](date)
+    - show [trip stats report](report_type) for [KSA-8821](asset) for [second quarter](date)
+    - run the [trips report](report_type) for [3688 FHD](asset) from [05 Jan 2025](date) to [15 Jan 2025](date)
+    - can you prepare a [trips report](report_type) for truck [5151 URA](asset) between [2025/01/05](date) and [2025/01/31](date)
+    - could I get a [trips report](report_type) on [JKL 908](asset) for [last 30 days](date)
+    - please generate a detailed [trips report](report_type) for [TRK-1234](asset) covering [January 5, 2025](date) to [January 31, 2025](date)
+    - give me [trips report](report_type) of vehicle [KAA 5521](asset) for [last month](date)
+    - I need [trips report](report_type) for [YZA-778](asset) just for [today](date)
+    - can you run a [trips report](report_type) for [DEF-345](asset) from [05/01/25](date) to [05/10/25](date)
+    - show me the [trips report](report_type) for [TRK-881](asset) for [last 15 days](date)
+    - generate [trips statistics report](report_type) for [ABC-123](asset) covering [last week](date)
+    - I want the [trips report](report_type) on [5151 URA](asset) between [01-05-2025](date) and [01-31-2025](date)
+    - please pull [trips statistics report](report_type) for [KSA-8821](asset) from [01.05.2025](date) to [31.05.2025](date)
+    - show the [trips report](report_type) for [TRK908](asset) for [this year](date)
+    - run [trips report](report_type) on [ABC-123](asset) for [last year](date)
+    - I need [trips statistics report](report_type) for [3688 FHD](asset) just for [today](date)
+    - show [trips report](report_type) for vehicles [KSA-8821](asset) and [AAA-119](asset) between [05/01/25](date) and [05/15/25](date)
+    - give me [trips report](report_type) of [TRK-1234](asset) from [2024-06-01](date) to [2024-06-30](date)
+    - [trips report](report_type) for [ABC-123](asset) for [this month](date)
+    - I want [trips statistics report](report_type) covering [March 2024](date)
+    - can you give me [trips report](report_type) for [all vehicles](asset) for [last month](date)
+    - generate [trips report](report_type) between [2024-01-01](date) and [2024-12-31](date)
+    - run [trips report](report_type) from [1 September 2024](date) to [30 September 2024](date)
+    - I need [trips stats report](report_type) for [ABC-123](asset) covering [last month](date)
+    - generate [trips report](report_type) for [3688 FHD](asset) and [TRK908](asset) from [2024-01-01](date) to [2024-01-31](date)
+    - show me [trips report](report_type) for vehicles [DEF-345](asset) and [YZA-778](asset) for [this week](date)
+    - run [trips statistics report](report_type) for [5151 URA](asset) and [KSA-8821](asset) between [2024-03-01](date) and [2024-03-15](date)
+    - provide me the [trips report](report_type) of [3688 FHD](asset) from [1 Sep](date) to [30 Sep](date)
+    - give me the [trips report](report_type) of [ABC-123](asset) for [last week](date)
+    - show [trips report](report_type) of vehicle [TRK908](asset) between [2024-01-01](date) and [2024-01-31](date)
+    - I need the [trips report](report_type) of [KSA-8821](asset) from [2024-03-01](date) to [2024-03-07](date)
+    - can you give me [trips report](report_type) of [5151 URA](asset) between [2024-05-01](date) and [2024-05-31](date)
+    - tell me [trips report](report_type) of vehicle [3688 FHD](asset) from [5 june](date) to [22 september](date)
+    - give me [trips report](report_type) for [ABC-123](asset) from [5 june](date) to [22 september](date)
+    - show me [trips statistics report](report_type) for [TRK908](asset) from [1 january](date) to [31 march](date)
+    - run [trips report](report_type) for [KSA-8821](asset) from [10 may](date) to [15 august](date)
+
+- intent: request_fleet_summary_report
+  examples: |
+    - fleet summary report
+    - summary report
+    - fleet report
+    - show me the [fleet summary report](report_type)
+    - give me a [fleet summary report](report_type)
+    - run the [fleet summary report](report_type)
+    - I need the [fleet summary report](report_type) for my fleet
+    - I would like an overall [fleet summary report](report_type) for my whole fleet
+    - can you quickly show the latest [fleet summary report](report_type)
+    - pull the most recent [fleet summary report](report_type)
+    - give me a concise [fleet summary report](report_type)
+    - show a detailed [fleet overview report](report_type) for my operations
+    - I need an up to date [fleet summary report](report_type)
+    - please provide a management level [fleet overview report](report_type)
+    - show me a comparison-style [fleet summary report](report_type)
+    - generate a brief [fleet summary report](report_type) for management review
+    - I need a KPI focused [fleet summary report](report_type)
+    - can you refresh the [fleet summary report](report_type)
+    - share the latest aggregated [fleet summary report](report_type)
+    - give me the latest [fleet summary report](report_type)
+    - I need the [fleet summary report](report_type)
+    - show me the [fleet overview report](report_type)
+    - give me the [summary report](report_type)
+    - I need a [fleet overview report](report_type)
+
+- intent: request_fleet_performance_report
+  examples: |
+    - fleet performance report
+    - performance report
+    - show me the [fleet performance summary report](report_type) for [today](date)
+    - give me [fleet performance summary report](report_type) for [yesterday](date)
+    - I want the [fleet performance report](report_type) from [05/01/2025](date) to [05/31/2025](date)
+    - run a [fleet performance summary report](report_type) for [last 7 days](date)
+    - generate [fleet performance summary report](report_type) for [second quarter](date)
+    - give me the [fleet performance report](report_type) from [01-01-2024](date) to [12-31-2025](date)
+    - run [fleet performance report](report_type) for [2025](date)
+    - show the overall [performance report](report_type) for [last 30 days](date)
+    - I need a [fleet performance summary report](report_type) covering [last 15 days](date)
+    - please provide a [fleet performance stats report](report_type) view for [05 January 2025](date) to [31 January 2025](date)
+    - show me the [fleet performance summary report](report_type) between [05 Jan 2025](date) and [31 Mar 2025](date)
+    - generate a [fleet performance summary report](report_type) from [2025/01/05](date) to [2025/01/31](date)
+    - I need the [fleet performance summary report](report_type) for [last week](date)
+    - please run a [fleet performance report](report_type) for [this week](date)
+    - show [fleet performance summary report](report_type) covering [January 5, 2025](date)
+    - provide the [fleet performance stats report](report_type) for [last 30 days](date)
+    - I want a historical [fleet performance summary report](report_type) from [2022](date) to [2024](date)
+    - generate a year-to-date [fleet performance report](report_type) for [this year](date)
+    - show me the [last month](date) [fleet performance summary report](report_type)
+    - run a detailed [fleet performance stats report](report_type) for [last year](date)
+    - show the [fleet performance summary report](report_type) results for [last 7 days](date)
+    - tell me [fleet performance summary report](report_type) from [5 june](date) to [22 september](date)
+    - give me [fleet performance report](report_type) for [1 january](date) to [31 march](date)
+
+- intent: request_fuel_consumption_report
+  examples: |
+    - fuel report
+    - fuel consumption report
+    - consumption report
+    - give me the [fuel trip consumption report](report_type) for [3688 FHD](asset) from [05/01/2025](date) to [05/31/2025](date)
+    - show [fuel trip consumption report](report_type) for vehicle [60408C26](asset) between [01.05.2025](date) and [31.05.2025](date)
+    - I need the [fuel trip consumption report](report_type) of [KSA-8821](asset) for [last 30 days](date)
+    - run a [fuel trip consumption report](report_type) on [TRK908](asset) from [05 January 2025](date) to [15 January 2025](date)
+    - generate [fuel trip consumption report](report_type) for [ABC-123](asset) from [20/06/2024](date) to [25/07/2025](date)
+    - give me the [fuel consumption report](report_type) for [5151 URA](asset) from [01.03.2024](date) to [31.03.2024](date)
+    - show [fuel report](report_type) for [KSA-5521](asset) between [05 Jan 2024](date) and [31 Mar 2024](date)
+    - I need the [fuel consumption report](report_type) of [TRK-881](asset) for [last 7 days](date)
+    - run a [fuel trip report](report_type) on [DEF-345](asset) for [yesterday](date)
+    - generate [consumption report](report_type) for [YZA-778](asset) from [01/01/24](date) to [15/01/24](date)
+    - give me the [fuel usage report](report_type) for [60408C26](asset) for [this month](date)
+    - show [fuel usage report](report_type) of [3688 FHD](asset) between [10.03.2024](date) and [20.03.2024](date)
+    - I need a [fuel consumption report](report_type) for [KSA-8821](asset) from [01 Sep 2024](date) to [30 Sep 2024](date)
+    - please run a [fuel trip consumption report](report_type) on [TRK908](asset) for [last 15 days](date)
+    - generate [fuel report](report_type) for [ABC-123](asset) between [01/02/24](date) and [28/02/24](date)
+    - show the [fuel consumption](report_type) for [3688 FHD](asset) from [01.05.2024](date) to [31.05.2024](date)
+    - give me a [fuel trip report](report_type) of [5151 URA](asset) for [yesterday](date)
+    - I need a [consumption report](report_type) of [TRK-1234](asset) for [this week](date)
+    - run a [fuel usage report](report_type) on [JKL-908](asset) between [01/07/24](date) and [31/07/24](date)
+    - generate [fuel usage report](report_type) for [ABC-123](asset) from [01.01.2024](date) to [31.12.2024](date)
+    - show [fuel trip consumption report](report_type) for [KSA-8821](asset) covering [June 1, 2024](date) to [June 30, 2024](date)
+    - give me the [fuel consumption report](report_type) for [TRK908](asset) from [01.04.24](date) to [30.04.24](date)
+    - I want a [fuel report](report_type) for [DEF-345](asset) from [December 1, 2023](date) to [December 31, 2023](date)
+    - run a [fuel consumption report](report_type) check on [3688 FHD](asset) between [15 Apr 2024](date) and [30 Apr 2024](date)
+    - generate a [fuel trip report](report_type) for [60408C26](asset) from [01.08.2024](date) to [31.08.2024](date)
+    - give me a [consumption report](report_type) for [KSA-5521](asset) for [15 Sep 2024](date)
+    - show a [fuel usage report](report_type) for [TRK-881](asset) between [01.09.2024](date) and [30.09.2024](date)
+    - I need [fuel usage report](report_type) of [YZA-778](asset) for [last month](date)
+    - show me the [fuel consumption report](report_type) for [5151 URA](asset) from [01/10/24](date) to [31/10/24](date)
+    - generate [fuel trip consumption report](report_type) for [ABC-123](asset) between [01.11.2024](date) and [30.11.2024](date)
+    - run a [fuel usage report](report_type) on [TRK908](asset) for [this month](date)
+    - give me [fuel consumption report](report_type) for [3688 FHD](asset) and [ABC-123](asset) from [2024-02-01](date) to [2024-02-28](date)
+    - show [fuel report](report_type) for vehicles [TRK908](asset) and [DEF-345](asset) for [last week](date)
+    - generate [fuel trip consumption report](report_type) for [KSA-8821](asset) and [5151 URA](asset) between [2024-06-01](date) and [2024-06-30](date)
+    - tell me [fuel consumption report](report_type) of vehicle [3688 FHD](asset) from [5 june](date) to [22 september](date)
+    - give me [fuel report](report_type) for [ABC-123](asset) from [1 january](date) to [31 march](date)
+    - show me [fuel trip consumption report](report_type) for [TRK908](asset) from [10 may](date) to [15 august](date)
+
+- intent: request_odometer_report
+  examples: |
+    - Odometer Report
+    - mileage report
+    - distance report
+    - give me the [odometer report](report_type) for [3688 FHD](asset) from [05/01/2025](date) to [31/05/2025](date)
+    - show [odometer report](report_type) for vehicle [60408C26](asset) between [05.01.2025](date) and [31.05.2025](date)
+    - I need the [odometer report](report_type) of [KSA-8821](asset) for [last 30 days](date)
+    - run an [odometer report](report_type) on [TRK908](asset) for [this year](date)
+    - generate [odometer report](report_type) for [ABC-123](asset) from [20/06/24](date) to [25/07/25](date)
+    - give me the [odometer report](report_type) reading for [5151 URA](asset) from [01.03.2024](date) to [31.03.2024](date)
+    - show [odometer reading report](report_type) for [KSA-5521](asset) between [05 Jan 2024](date) and [31 Mar 2024](date)
+    - I need the [odometer readings report](report_type) of [TRK-881](asset) for [last 7 days](date)
+    - run an [odometer report](report_type) on [DEF-345](asset) for [yesterday](date)
+    - generate an [odometer reading report](report_type) for [YZA-778](asset) from [01/01/24](date) to [15/01/24](date)
+    - give me the [mileage report](report_type) for [60408C26](asset) for [this month](date)
+    - show [mileage report](report_type) of [3688 FHD](asset) between [10.03.2024](date) and [20.03.2024](date)
+    - I need a [distance report](report_type) for [KSA-8821](asset) from [01 Sep 2024](date) to [30 Sep 2024](date)
+    - please run an [odometer report](report_type) on [TRK908](asset) for [last 15 days](date)
+    - generate a [mileage report](report_type) for [ABC-123](report_type) between [01/02/24](date) and [28/02/24](date)
+    - show the [odometer reading report](report_type) for [3688 FHD](asset) from [01.05.2024](date) to [31.05.2024](date)
+    - give me an [odometer readings report](report_type) of [5151 URA](asset) for [yesterday](date)
+    - I need a [distance report](report_type) of [TRK-1234](asset) for [this week](date)
+    - run a [mileage report](report_type) on [JKL-908](asset) between [01/07/24](date) and [31/07/24](date)
+    - generate [odometer report](report_type) for [ABC-123](asset) from [01.01.2024](date) to [31.12.2024](date)
+    - show [odometer report](report_type) for [KSA-8821](asset) covering [June 1, 2024](date) to [June 30, 2024](date)
+    - give me the [odometer trip report](report_type) for [TRK908](asset) from [01.04.24](date) to [30.04.24](date)
+    - I want a [mileage report](report_type) for [DEF-345](asset) from [December 1, 2023](date) to [December 31, 2023](date)
+    - run a [distance report](report_type) on [3688 FHD](asset) between [15 Apr 2024](date) and [30 Apr 2024](date)
+    - generate an [odometer readings report](report_type) for [60408C26](asset) from [01.08.2024](date) to [31.08.2024](date)
+    - give me a [mileage report](report_type) summary for [KSA-5521](asset) for [15 Sep 2024](date)
+    - show a [distance report](report_type) for [TRK-881](asset) between [01.09.2024](date) and [30.09.2024](date)
+    - I need [mileage report](report_type) of [YZA-778](asset) for [last month](date)
+    - show me the [odometer report](report_type) for [5151 URA](asset) from [01/10/24](date) to [31/10/24](date)
+    - generate [odometer report](report_type) for [ABC-123](asset) between [01.11.2024](date) and [30.11.2024](date)
+    - show [odometer report](report_type) for [3688 FHD](asset) and [TRK908](asset) from [01.01.2024](date) to [31.01.2024](date)
+    - give me [mileage report](report_type) for vehicles [DEF-345](asset) and [YZA-778](asset) for [this month](date)
+    - run [odometer reading report](report_type) for [5151 URA](asset) and [KSA-8821](asset) between [01.05.2024](date) and [31.05.2024](date)
+    - tell me [odometer report](report_type) of vehicle [3688 FHD](asset) from [5 june](date) to [22 september](date)
+    - give me [odometer report](report_type) for [ABC-123](asset) from [1 january](date) to [31 march](date)
+    - show me [mileage report](report_type) for [TRK908](asset) from [10 may](date) to [15 august](date)
+
+- intent: request_stop_report
+  examples: |
+    - stop time report
+    - stoppage report
+    - stop report
+    - I need the [stop time report](report_type) for [ABC-123](asset) from [05-01-2025](date) to [07-05-2025](date)
+    - please run [stop time report](report_type) on vehicle [3688 FHD](asset) for [yesterday](date)
+    - give me the [stop time report](report_type) for [JKL-908](asset) between [01/05/24](date) and [10/05/24](date)
+    - run a [stop time report](report_type) on [TRK-881](asset) for [01.04.2024](date)
+    - generate [stop time report](report_type) for [DEF-345](asset) from [01.03.2024](date) to [05.03.2024](date)
+    - pull the [stop report](report_type) covering [10 March 2024](date) for [ABC-123](asset)
+    - can you give me a [stop time report](report_type) for plates [KSA-8821](asset) and [AAA-119](asset) for [last 7 days](date)
+    - [stop report](report_type) of vehicle [5151 URA](asset) from [01.01.2024](date) to [31.01.2024](date)
+    - please provide the [stop time report](report_type) for [5151URA](asset) for [this month](date)
+    - show me the [stop report](report_type) for vehicle [3688 FHD](asset) from [01/10/24](date) to [30/11/24](date)
+    - I need [stop report](report_type) results on [YZA-778](asset) between [15.09.2024](date) and [20.09.2024](date)
+    - give the [stop time report](report_type) of truck [KAA 5521](asset) for [01.11.2024](date) through [30.11.2024](date)
+    - fetch [stop report](report_type) data for [JKL 908](asset) covering [05.01.2024](date) to [12.01.2024](date)
+    - we want the [stop report](report_type) on [TRK-1234](asset) for [01/05/24](date) until [31/05/24](date)
+    - [stop report](report_type) for vehicle [3688 FHD](asset) from [01 Sep 2024](date) to [30 Sep 2024](date)
+    - show [stop time report](report_type) for [3688 FHD](asset) between [01.09.24](date) and [30.09.24](date)
+    - give me a [stop report](report_type) of [3688 FHD](asset) covering [1 September 2024](date) to [30 September 2024](date)
+    - [stop time report](report_type) for [3688 FHD](asset) for [September 2024](date)
+    - generate [stop time report](report_type) on [KSA-8821](asset) from [yesterday](date) to [today](date)
+    - show [stop report](report_type) for [TRK908](asset) for [last month](date)
+    - run [stop report](report_type) on [ABC-123](asset) between [next week](date) and [next month](date)
+    - I need a [stop time report](report_type) for [5151URA](asset) for [this week](date)
+    - can you give me a [stoppage report](report_type) for vehicle [3688 Fhd](asset) for [02/06/25](date)
+    - please run [stop report](report_type) for vehicle [3688 FHD](asset) for [02.06.2025](date)
+    - give me [stop report](report_type) of [3688 FHD](asset) from [02/06/25](date) to [30/09/25](date)
+    - we want the [stop time report](report_type) on [3688 FHD](asset) between [02.06.2025](date) and [30.09.2025](date)
+    - [stop time report](report_type) for the [month of September 2024](date) for vehicle [3688 FHD](asset)
+    - [stop time report](report_type) for [3688 FHD](asset) for [last year](date)
+    - [stop time report](report_type) for [3688 FHD](asset) for [this year](date)
+    - [stop report](report_type) for vehicle [3688 FHD](asset) for [whole year](date)
+    - generate [stop time report](report_type) for [ABC-123](asset) and [DEF-345](asset) from [01.01.2024](date) to [31.01.2024](date)
+    - show [stop report](report_type) for vehicles [TRK908](asset) and [3688 FHD](asset) for [last 7 days](date)
+    - run [stop time report](report_type) for [KSA-8821](asset) and [5151 URA](asset) between [01/04/24](date) and [30/04/24](date)
+    - tell me [stop time report](report_type) of vehicle [3688 FHD](asset) from [5 june](date) to [22 september](date)
+    - give me [stop report](report_type) for [ABC-123](asset) from [1 january](date) to [31 march](date)
+    - show me [stop time report](report_type) for [TRK908](asset) from [10 may](date) to [15 august](date)
+
+- intent: request_utilization_report
+  examples: |
+    - utilization report
+    - work hour report
+    - work hours report
+    - usage report
+    - I need a [utilization report](report_type)
+    - show me the [work hour report](report_type)
+    - generate [utilization report](report_type) for [last month](date)
+    - [utilization report](report_type) from [01/01/24](date) to [31/01/24](date)
+    - [work hour report](report_type) for [this week](date)
+    - give me [utilization report](report_type) for [yesterday](date)
+    - run [work hour report](report_type) for [last 7 days](date)
+    - [utilization report](report_type) for [this year](date)
+    - show [work hour report](report_type) between [01.01.2024](date) and [31.12.2024](date)
+    - [utilization report](report_type) for [September 2024](date)
+    - generate a [work hours report](report_type) from [01.03.2024](date) to [07.03.2024](date)
+    - I want [utilization report](report_type) details for [this month](date)
+    - please run a [work time report](report_type) for [last year](date)
+    - give me a [usage report](report_type) covering [01/02/24](date) to [28/02/24](date)
+    - show [utilization hours report](report_type) for [last 6 months](date)
+    - I need [usage hours report](report_type) for [Q2 2024](date)
+    - run [utilization hours report](report_type) between [01.04.2024](date) and [30.04.2024](date)
+    - pull a [usage report](report_type) for [this week](date)
+    - generate [work hours report](report_type) stats for [yesterday](date)
+    - show me [utilization hours report](report_type) from [01/05/24](date) to [15/05/24](date)
+    - I need a [work time report](report_type) for [next week](date)
+    - run [utilization report](report_type) for the [month of March 2024](date)
+    - give me [work hours report](report_type) for [this weekend](date)
+    - [usage report](report_type) for [Q1 2024](date)
+    - show [utilization hours report](report_type) between [01/06/24](date) and [30/06/24](date)
+    - generate [utilization report](report_type) for [ABC-123](asset) from [01.07.2024](date) to [31.07.2024](date)
+    - show [work hour report](report_type) for [TRK908](asset) and [3688 FHD](asset) for [last 30 days](date)
+    - run [utilization hours report](report_type) for [KSA-8821](asset) between [01.08.2024](date) and [31.08.2024](date)
+    - tell me [utilization report](report_type) of vehicle [3688 FHD](asset) from [5 june](date) to [22 september](date)
+    - give me [work hour report](report_type) for [ABC-123](asset) from [1 january](date) to [31 march](date)
+    - show me [utilization report](report_type) for [TRK908](asset) from [10 may](date) to [15 august](date)
+
+- intent: request_idle_report
+  examples: |
+    - idle time report
+    - idling report
+    - Idle Report
+    - I need an [idle report](report_type) for [ABC-123](asset) from [01/03/24](date) to [07/03/24](date)
+    - give me the [idle time report](report_type) for [DEF-345](asset) between [01.04.2024](date) and [05.04.2024](date)
+    - can you run an [idling report](report_type) on [TRK-881](asset) for [01.04.2024](date)
+    - please generate an [idle time report](report_type) for [KSA-8821](asset) from [01.01.2024](date) to [31.01.2024](date)
+    - [idle report](report_type) of vehicle [5151 URA](asset) for [last 7 days](date)
+    - show me the [idling report](report_type) for vehicle [3688 FHD](asset) from [01/10/24](date) to [30/11/24](date)
+    - I need [idle time report](report_type) results on [YZA-778](asset) between [15.09.2024](date) and [20.09.2024](date)
+    - give the [idle time report](report_type) of truck [KAA 5521](asset) for [01.11.2024](date) through [30.11.2024](date)
+    - fetch [idle report](report_type) data for [JKL 908](asset) covering [05.01.2024](date) to [12.01.2024](date)
+    - we want the [idling report](report_type) on [TRK-1234](asset) for [01/05/24](date) until [31/05/24](date)
+    - [idle report](report_type) for vehicle [3688 FHD](asset) from [01 Sep 2024](date) to [30 Sep 2024](date)
+    - show [idle time report](report_type) for [3688 FHD](asset) between [01.09.24](date) and [30.09.24](date)
+    - give me [idle report](report_type) of [3688 FHD](asset) covering [1 September 2024](date) to [30 September 2024](date)
+    - [idle time report](report_type) for [3688 FHD](asset) for [September 2024](date)
+    - generate an [idle time report](report_type) on [KSA-8821](asset) from [yesterday](date) to [today](date)
+    - show [idle report](report_type) for [TRK908](asset) for [last month](date)
+    - run an [idling report](report_type) on [ABC-123](asset) between [next week](date) and [next month](date)
+    - I need an [idle time report](report_type) for [5151URA](asset) for [this week](date)
+    - can you give me an [idle report](report_type) of vehicle [3688 Fhd](asset) for [02/06/25](date)
+    - please run an [idle report](report_type) for vehicle [3688 FHD](asset) for [02.06.2025](date)
+    - give me [idle report](report_type) of [3688 FHD](asset) from [02/06/25](date) to [30/09/25](date)
+    - we want the [idle time report](report_type) on [3688 FHD](asset) between [02.06.2025](date) and [30.09.2025](date)
+    - [idle report](report_type) for vehicle [3688 FHD](asset) for [whole year](date)
+    - [idle time report](report_type) for [3688 FHD](asset) for [last year](date)
+    - [idle time report](report_type) for [3688 FHD](asset) for [this year](date)
+    - I need the [idle time report](report_type) for [ABC-123](asset) for [this month](date)
+    - please send an [idle hours report](report_type) for [DEF-345](asset) for [this year](date)
+    - show [idling time report](report_type) on [TRK-881](asset) for [last year](date)
+    - pull an [idle hours report](report_type) for [5151 URA](asset) between [01.02.2024](date) and [28.02.2024](date)
+    - run [idling hours report](report_type) for [60408C26](asset) from [01/06/24](date) to [30/06/24](date)
+    - give me [idle time report](report_type) for [3688 FHD](asset) and [TRK908](asset) from [01.01.2024](date) to [31.01.2024](date)
+    - show [idle report](report_type) for vehicles [ABC-123](asset) and [DEF-345](asset) for [this week](date)
+    - generate [idling report](report_type) for [KSA-8821](asset) and [5151 URA](asset) between [01.03.2024](date) and [15.03.2024](date)
+    - tell me [idle report](report_type) of vehicle [3688 FHD](asset) from [5 june](date) to [22 september](date)
+    - give me [idle time report](report_type) for [ABC-123](asset) from [1 january](date) to [31 march](date)
+    - show me [idling report](report_type) for [TRK908](asset) from [10 may](date) to [15 august](date)
+
+- intent: request_raw_data_report
+  examples: |
+    - raw report
+    - raw data report
+    - raw information report
+    - Raw Data Report
+    - I need the [raw data report](report_type) for [ABC-123](asset) from [05/01/25](date) to [07/05/25](date)
+    - generate a [raw data report](report_type) for [KSA-8821](asset) from [05.01.2025](date) to [31.01.2025](date)
+    - get me the [raw data report](report_type) for vehicle [TRK908](asset) between [01/01/25](date) and [31/12/25](date)
+    - please run a [raw report](report_type) on [3688 FHD](asset) from [01.06.2024](date) to [15.06.2024](date)
+    - I need [raw data report](report_type) of [AAA-119](asset) for [yesterday](date)
+    - show the [raw data export report](report_type) for [DEF-345](asset) for [last 7 days](date)
+    - give me a [raw data report](report_type) for [5151 URA](asset) covering [01.02.2024](date) to [28.02.2024](date)
+    - pull [raw information report](report_type) on [TRK-1234](asset) from [01.04.2024](date) to [30.04.2024](date)
+    - [raw data report](report_type) for [ABC-123](asset) between [01 March 2024](date) and [10 March 2024](date)
+    - I want the [raw report](report_type) for [KSA-8821](asset) for [last month](date)
+    - generate [raw data report](report_type) for [3688 FHD](asset) for [this month](date)
+    - show me [raw data export report](report_type) of [YZA-778](asset) from [01/07/24](date) to [31/07/24](date)
+    - get [raw information report](report_type) for [JKL-908](asset) between [01.08.2024](date) and [15.08.2024](date)
+    - please provide a [raw data report](report_type) for [60408C26](asset) from [01.09.2024](date) to [30.09.2024](date)
+    - [raw data report](report_type) for [ABC-123](asset) on [10.03.2024](date)
+    - run a [raw report](report_type) for [TRK908](asset) on [15.01.2024](date)
+    - I need [raw data export report](report_type) for [KSA-8821](asset) for [this week](date)
+    - give me [raw information report](report_type) on [3688 FHD](asset) for [last year](date)
+    - show [raw data report](report_type) for [DEF-345](asset) for [this year](date)
+    - generate a [raw data report](report_type) extract for [AAA-119](asset) from [01.09.24](date) to [30.09.24](date)
+    - [raw data export report](report_type) of vehicle [5151 URA](asset) between [1 September 2024](date) and [30 September 2024](date)
+    - pull [raw report](report_type) for [TRK-1234](asset) from [01/10/24](date) to [31/10/24](date)
+    - I need [raw data report](report_type) for [ABC-123](asset) for [today](date)
+    - please run [raw data report](report_type) on [KSA-8821](asset) between [01.11.2024](date) and [30.11.2024](date)
+    - get [raw data export report](report_type) for [3688 FHD](asset) covering [01.12.2024](date) to [31.12.2024](date)
+    - generate [raw information report](report_type) for [DEF-345](asset) from [01.04.2024](date) to [10.04.2024](date)
+    - show [raw data report](report_type) of [AAA-119](asset) between [01/06/24](date) and [15/06/24](date)
+    - I want [raw data report](report_type) for [TRK908](asset) for [last 6 months](date)
+    - run a [raw report](report_type) for [YZA-778](asset) from [10.02.2024](date) to [20.02.2024](date)
+    - please provide [raw data export](report_type) for [60408C26](asset) between [15.03.2024](date) and [25.03.2024](date)
+    - generate [raw data report](report_type) for [3688 FHD](asset) and [TRK908](asset) from [01.01.2024](date) to [31.01.2024](date)
+    - show [raw data report](report_type) for vehicles [ABC-123](asset) and [DEF-345](asset) for [last 7 days](date)
+    - run [raw report](report_type) for [KSA-8821](asset) and [5151 URA](asset) between [01.05.2024](date) and [31.05.2024](date)
+    - tell me [raw data report](report_type) of vehicle [3688 FHD](asset) from [5 june](date) to [22 september](date)
+    - give me [raw data report](report_type) for [ABC-123](asset) from [1 january](date) to [31 march](date)
+    - show me [raw report](report_type) for [TRK908](asset) from [10 may](date) to [15 august](date)
+
+- intent: request_track_data_report
+  examples: |
+    - track data report
+    - tracking report
+    - track report
+    - all parameters report
+    - Track Data Report
+    - I need the [track data report](report_type) for [ABC-123](asset) from [05-01-25](date) to [07-05-25](date)
+    - generate a [track data report](report_type) for [KSA-8821](asset) from [05 January 2025](date) to [31 January 2025](date)
+    - get me the [all parameters report](report_type) for vehicle [TRK908](asset) between [01/01/25](date) and [31/12/25](date)
+    - show me the [track data report](report_type) for [3688 FHD](asset) for [last 7 days](date)
+    - run a [track data report](report_type) on [ABC-123](asset) for [yesterday](date)
+    - please generate [tracking data report](report_type) for [DEF-345](asset) from [01.04.2024](date) to [10.04.2024](date)
+    - I need [track information report](report_type) on [5151 URA](asset) between [01.02.2024](date) and [28.02.2024](date)
+    - pull [gps data report](report_type) for [TRK-1234](asset) from [01/06/24](date) to [15/06/24](date)
+    - [track data report](report_type) for [AAA-119](asset) between [01 March 2024](date) and [10 March 2024](date)
+    - show [location data report](report_type) on [YZA-778](asset) for [this month](date)
+    - give me an [all data report](report_type) for [60408C26](asset) for [last month](date)
+    - I want [tracking report](report_type) for [KSA-8821](asset) from [01.09.24](date) to [30.09.24](date)
+    - run [track data report](report_type) for [3688 FHD](asset) between [1 September 2024](date) and [30 September 2024](date)
+    - generate [parameters report](report_type) for [ABC-123](asset) from [01.07.2024](date) to [31.07.2024](date)
+    - show [gps data report](report_type) for [TRK908](asset) on [15.01.2024](date)
+    - get [track information report](report_type) for [DEF-345](asset) on [10.03.2024](date)
+    - please run a [location data report](report_type) for [5151 URA](asset) for [this week](date)
+    - I need an [all parameters report](report_type) for [TRK-1234](asset) for [last year](date)
+    - show me [track data report](report_type) for [3688 FHD](asset) for [this year](date)
+    - generate [tracking data report](report_type) for [AAA-119](asset) from [01.08.2024](date) to [31.08.2024](date)
+    - [track data report](report_type) of vehicle [JKL-908](asset) between [01/09/24](date) and [15/09/24](date)
+    - pull [all data report](report_type) for [YZA-778](asset) from [10.02.2024](date) to [20.02.2024](date)
+    - I want [gps data report](report_type) for [KSA-8821](asset) for [last 6 months](date)
+    - run [location data report](report_type) on [TRK908](asset) between [01.10.2024](date) and [31.10.2024](date)
+    - please provide [parameters report](report_type) for [DEF-345](asset) from [01.04.2024](date) to [30.04.2024](date)
+    - show [track data report](report_type) for [ABC-123](asset) for [today](date)
+    - get [tracking report](report_type) for [3688 FHD](asset) between [01.11.2024](date) and [30.11.2024](date)
+    - generate [all parameters report](report_type) for [AAA-119](asset) covering [01.06.2024](date) to [15.06.2024](date)
+    - I need [track information report](report_type) for [TRK-908](asset) for [this weekend](date)
+    - run an [all data report](report_type) for [60408C26](asset) from [15.03.2024](date) to [25.03.2024](date)
+    - generate [track data report](report_type) for [3688 FHD](asset) and [TRK908](asset) from [01.01.2024](date) to [31.01.2024](date)
+    - show [tracking data report](report_type) for vehicles [ABC-123](asset) and [DEF-345](asset) for [this month](date)
+    - give me [gps data report](report_type) for [KSA-8821](asset) and [5151 URA](asset) between [01.06.2024](date) and [30.06.2024](date)
+    - tell me [track data report](report_type) of vehicle [3688 FHD](asset) from [5 june](date) to [22 september](date)
+    - give me [track data report](report_type) for [ABC-123](asset) from [1 january](date) to [31 march](date)
+    - show me [all parameters report](report_type) for [TRK908](asset) from [10 may](date) to [15 august](date)
+
+- intent: request_temperature_humidity_report
+  examples: |
+    - temperature report
+    - temperature and humidity report
+    - temperature & humidity report
+    - humidity report
+    - I need a [temperature & humidity report](report_type) for [ABC-123](asset) from [05/01/25](date) to [07/05/25](date)
+    - generate a [temperature and humidity report](report_type) for [3688 FHD](asset) between [05-01-25](date) and [31-05-25](date)
+    - show me the [temperature humidity report](report_type) for [KSA-8821](asset) for [last 30 days](date)
+    - run a [temp and humidity report](report_type) on [TRK908](asset) for [yesterday](date)
+    - please provide a [temp & humidity report](report_type) for [DEF-345](asset) from [01.05.2024](date) to [31.05.2024](date)
+    - I need a [temperature report](report_type) for [5151 URA](asset) between [01.01.2024](date) and [15.01.2024](date)
+    - give me a [humidity report](report_type) for [TRK-1234](asset) from [01/02/24](date) to [28/02/24](date)
+    - show [climate report](report_type) for [AAA-119](asset) covering [01.04.2024](date) to [10.04.2024](date)
+    - generate an [environmental report](report_type) for [YZA-778](asset) from [01/06/24](date) to [15/06/24](date)
+    - [temperature & humidity report](report_type) for [ABC-123](asset) between [01 March 2024](date) and [10 March 2024](date)
+    - run [temperature and humidity report](report_type) on [60408C26](asset) for [last 7 days](date)
+    - I need [temperature humidity report](report_type) for [KSA-8821](asset) for [this week](date)
+    - give me [temp and humidity report](report_type) for [3688 FHD](asset) for [this month](date)
+    - show [temp & humidity report](report_type) for [TRK908](asset) for [last year](date)
+    - generate [temp humidity report](report_type) for [DEF-345](asset) for [this year](date)
+    - I want a [temperature report](report_type) for [5151 URA](asset) from [01.09.24](date) to [30.09.24](date)
+    - please run a [humidity report](report_type) for [TRK-1234](asset) between [01.07.2024](date) and [31.07.2024](date)
+    - show [climate report](report_type) for [AAA-119](asset) from [01/08/24](date) to [31/08/24](date)
+    - I need an [environmental report](report_type) for [YZA-778](asset) for [last 6 months](date)
+    - give me [temperature & humidity report](report_type) for [ABC-123](asset) for [today](date)
+    - run [temperature and humidity report](report_type) on [3688 FHD](asset) between [01.11.2024](date) and [30.11.2024](date)
+    - show [temperature humidity report](report_type) for [KSA-8821](asset) from [01.09.2024](date) to [30.09.2024](date)
+    - generate [temp and humidity report](report_type) for [TRK908](asset) from [01.10.2024](date) to [31.10.2024](date)
+    - get [temp & humidity report](report_type) for [DEF-345](asset) on [10.03.2024](date)
+    - I need [temp humidity report](report_type) for [5151 URA](asset) for [this weekend](date)
+    - please send a [temperature report](report_type) for [TRK-1234](asset) for [this quarter](date)
+    - show me a [humidity report](report_type) for [AAA-119](asset) between [10.02.2024](date) and [20.02.2024](date)
+    - generate [climate report](report_type) for [YZA-778](asset) from [01.12.2024](date) to [31.12.2024](date)
+    - I want an [environmental report](report_type) for [KSA-8821](asset) for [last month](date)
+    - run a [temperature & humidity report](report_type) on [3688 FHD](asset) for [this year](date)
+    - generate [temperature and humidity report](report_type) for [3688 FHD](asset) and [TRK908](asset) from [01.01.2024](date) to [31.01.2024](date)
+    - show [temp humidity report](report_type) for vehicles [ABC-123](asset) and [DEF-345](asset) for [last 7 days](date)
+    - give me [climate report](report_type) for [KSA-8821](asset) and [5151 URA](asset) between [01.04.2024](date) and [30.04.2024](date)
+    - tell me [temperature & humidity report](report_type) of vehicle [3688 FHD](asset) from [5 june](date) to [22 september](date)
+    - give me [temperature humidity report](report_type) for [ABC-123](asset) from [1 january](date) to [31 march](date)
+    - show me [temperature and humidity report](report_type) for [TRK908](asset) from [10 may](date) to [15 august](date)
+
+- intent: request_weight_sensor_report
+  examples: |
+    - weight report
+    - weight sensor report
+    - sensor report
+    - load sensor report
+    - I need a [weight sensor report](report_type) for [ABC-123](asset) from [05.01.2025](date) to [07.05.2025](date)
+    - generate a [weight-sensor report](report_type) for [3688 FHD](asset) between [05 Jan 2025](date) and [31 Jan 2025](date)
+    - show me the [weight sensor report](report_type) data for [KSA-8821](asset) for [last 15 days](date)
+    - run a [weight sensor report](report_type) on [TRK908](asset) for [yesterday](date)
+    - please provide a [weight report](report_type) for [DEF-345](asset) from [01/05/24](date) to [31/05/24](date)
+    - I need a [sensor report](report_type) for [5151 URA](asset) between [01.01.2024](date) and [15.01.2024](date)
+    - give me a [weight data report](report_type) for [TRK-1234](asset) from [01/02/24](date) to [28/02/24](date)
+    - show [load sensor report](report_type) for [AAA-119](asset) covering [01.04.2024](date) to [10.04.2024](date)
+    - generate a [weight sensor report](report_type) for [YZA-778](asset) from [01/06/24](date) to [15/06/24](date)
+    - [weight-sensor report](report_type) for [ABC-123](asset) between [01 March 2024](date) and [10 March 2024](date)
+    - run [weight sensor report](report_type) on [60408C26](asset) for [last 7 days](date)
+    - I need [weight report](report_type) for [KSA-8821](asset) for [this week](date)
+    - give me [sensor report](report_type) for [3688 FHD](asset) for [this month](date)
+    - show [weight data report](report_type) for [TRK908](asset) for [last year](date)
+    - generate [load sensor report](report_type) for [DEF-345](asset) for [this year](date)
+    - I want a [weight sensor report](report_type) for [5151 URA](asset) from [01.09.24](date) to [30.09.24](date)
+    - please run a [weight-sensor report](report_type) for [TRK-1234](asset) between [01.07.2024](date) and [31.07.2024](date)
+    - show [weight sensor report](report_type) for [AAA-119](asset) from [01/08/24](date) to [31/08/24](date)
+    - I need a [weight report](report_type) for [YZA-778](asset) for [last 6 months](date)
+    - give me [sensor report](report_type) for [ABC-123](asset) for [today](date)
+    - run [weight data report](report_type) on [3688 FHD](asset) between [01.11.2024](date) and [30.11.2024](date)
+    - show [load sensor report](report_type) for [KSA-8821](asset) from [01.09.2024](date) to [30.09.2024](date)
+    - generate [weight sensor report](report_type) for [TRK908](asset) from [01.10.2024](date) to [31.10.2024](date)
+    - get [weight-sensor report](report_type) for [DEF-345](asset) on [10.03.2024](date)
+    - I need [weight sensor report](report_type) for [5151 URA](asset) for [this weekend](date)
+    - please send a [weight report](report_type) for [TRK-1234](asset) for [this quarter](date)
+    - show me a [sensor report](report_type) for [AAA-119](asset) between [10.02.2024](date) and [20.02.2024](date)
+    - generate [weight data report](report_type) for [YZA-778](asset) from [01.12.2024](date) to [31.12.2024](date)
+    - I want a [load sensor report](report_type) for [KSA-8821](asset) for [last month](date)
+    - run a [weight sensor report](report_type) on [3688 FHD](asset) for [this year](date)
+    - generate [weight sensor report](report_type) for [3688 FHD](asset) and [TRK908](asset) from [01.01.2024](date) to [31.01.2024](date)
+    - show [weight report](report_type) for vehicles [ABC-123](asset) and [DEF-345](asset) for [this month](date)
+    - give me [load sensor report](report_type) for [KSA-8821](asset) and [5151 URA](asset) between [01.05.2024](date) and [31.05.2024](date)
+    - tell me [weight sensor report](report_type) of vehicle [3688 FHD](asset) from [5 june](date) to [22 september](date)
+    - give me [weight sensor report](report_type) for [ABC-123](asset) from [1 january](date) to [31 march](date)
+    - show me [weight report](report_type) for [TRK908](asset) from [10 may](date) to [15 august](date)
+
+- intent: request_commands_history_report
+  examples: |
+    - commands report
+    - command history report
+    - commands history report
+    - command report
+    - I need a [commands history report](report_type) for [ABC-123](asset) from [05.01.25](date) to [07.05.25](date)
+    - generate a [command history report](report_type) for [3688 FHD](asset) between [05 Jan 2025](date) and [31 Jan 2025](date)
+    - show me the [commands history report](report_type) for [KSA-8821](asset) for [Q2 2024](date)
+    - run a [command history report](report_type) on [TRK908](asset) for [yesterday](date)
+    - please provide a [command log report](report_type) for [DEF-345](asset) from [01/05/24](date) to [31/05/24](date)
+    - I need a [commands log report](report_type) for [5151 URA](asset) between [01.01.2024](date) and [15.01.2024](date)
+    - give me a [command report](report_type) for [TRK-1234](asset) from [01/02/24](date) to [28/02/24](date)
+    - show [commands report](report_type) for [AAA-119](asset) covering [01.04.2024](date) to [10.04.2024](date)
+    - generate a [command history report](report_type) for [YZA-778](asset) from [01/06/24](date) to [15/06/24](date)
+    - [command history report](report_type) for [ABC-123](asset) between [01 March 2024](date) and [10 March 2024](date)
+    - run [commands history report](report_type) on [60408C26](asset) for [last 7 days](date)
+    - I need [command log report](report_type) for [KSA-8821](asset) for [this week](date)
+    - give me [commands log report](report_type) for [3688 FHD](asset) for [this month](date)
+    - show [command report](report_type) for [TRK908](asset) for [last year](date)
+    - generate [commands report](report_type) for [DEF-345](asset) for [this year](date)
+    - I want a [command history report](report_type) for [5151 URA](asset) from [01.09.24](date) to [30.09.24](date)
+    - please run a [commands history report](report_type) for [TRK-1234](asset) between [01.07.2024](date) and [31.07.2024](date)
+    - show [command history report](report_type) for [AAA-119](asset) from [01/08/24](date) to [31/08/24](date)
+    - I need a [commands log report](report_type) for [YZA-778](asset) for [last 6 months](date)
+    - give me [command log report](report_type) for [ABC-123](asset) for [today](date)
+    - run [commands report](report_type) on [3688 FHD](asset) between [01.11.2024](date) and [30.11.2024](date)
+    - show [command history report](report_type) for [KSA-8821](asset) from [01.09.2024](date) to [30.09.2024](date)
+    - generate [commands history report](report_type) for [TRK908](asset) from [01.10.2024](date) to [31.10.2024](date)
+    - get [command history report](report_type) for [DEF-345](asset) on [10.03.2024](date)
+    - I need [commands history report](report_type) for [5151 URA](asset) for [this weekend](date)
+    - please send a [command log report](report_type) for [TRK-1234](asset) for [this quarter](date)
+    - show me a [commands log report](report_type) for [AAA-119](asset) between [10.02.2024](date) and [20.02.2024](date)
+    - generate [command report](report_type) for [YZA-778](asset) from [01.12.2024](date) to [31.12.2024](date)
+    - I want a [commands report](report_type) for [KSA-8821](asset) for [last month](date)
+    - run a [command history report](report_type) on [3688 FHD](asset) for [this year](date)
+    - generate [commands history report](report_type) for [3688 FHD](asset) and [TRK908](asset) from [01.01.2024](date) to [31.01.2024](date)
+    - show [command log report](report_type) for vehicles [ABC-123](asset) and [DEF-345](asset) for [last week](date)
+    - give me [commands report](report_type) for [KSA-8821](asset) and [5151 URA](asset) between [01.03.2024](date) and [15.03.2024](date)
+    - tell me [commands history report](report_type) of vehicle [3688 FHD](asset) from [5 june](date) to [22 september](date)
+    - give me [command history report](report_type) for [ABC-123](asset) from [1 january](date) to [31 march](date)
+    - show me [commands report](report_type) for [TRK908](asset) from [10 may](date) to [15 august](date)
+
+- intent: request_events_report
+  examples: |
+    - events report
+    - event report
+    - event log report
+    - I need an [events report](report_type) for [ABC-123](asset) from [05.01.25](date) to [07.05.25](date)
+    - generate an [event report](report_type) for [3688 FHD](asset) between [05 Jan 2025](date) and [31 May 2025](date)
+    - show me the [events report](report_type) for [KSA-8821](asset) for [last 7 days](date)
+    - run an [events report](report_type) on [TRK908](asset) for [yesterday](date)
+    - please provide an [event logs report](report_type) for [DEF-345](asset) from [01/05/24](date) to [31/05/24](date)
+    - I need an [event log report](report_type) for [5151 URA](asset) between [01.01.2024](date) and [15.01.2024](date)
+    - give me an [event history report](report_type) for [TRK-1234](asset) from [01/02/24](date) to [28/02/24](date)
+    - show [event history report](report_type) for [AAA-119](asset) covering [01.04.2024](date) to [10.04.2024](date)
+    - generate an [activity report](report_type) for [YZA-778](asset) from [01/06/24](date) to [15/06/24](date)
+    - [activities report](report_type) for [ABC-123](asset) between [01 March 2024](date) and [10 March 2024](date)
+    - run [events](report_type) on [60408C26](asset) for [last week](date)
+    - I need [event report](report_type) for [KSA-8821](asset) for [this week](date)
+    - give me [event logs](report_type) for [3688 FHD](asset) for [this month](date)
+    - show [event log report](report_type) for [TRK908](asset) for [last year](date)
+    - generate [event history](report_type) for [DEF-345](asset) for [this year](date)
+    - I want an [event history report](report_type) for [5151 URA](asset) from [01.09.24](date) to [30.09.24](date)
+    - please run an [activity report](report_type) for [TRK-1234](asset) between [01.07.2024](date) and [31.07.2024](date)
+    - show [activities report](report_type) for [AAA-119](asset) from [01/08/24](date) to [31/08/24](date)
+    - I need an [events report](report_type) for [YZA-778](asset) for [last 6 months](date)
+    - give me [event report](report_type) for [ABC-123](asset) for [today](date)
+    - run [events](report_type) on [3688 FHD](asset) between [01.11.2024](date) and [30.11.2024](date)
+    - show [event logs](report_type) for [KSA-8821](asset) from [01.09.2024](date) to [30.09.2024](date)
+    - generate [event log report](report_type) for [TRK908](asset) from [01.10.2024](date) to [31.10.2024](date)
+    - get [event history](report_type) for [DEF-345](asset) on [10.03.2024](date)
+    - I need [event history report](report_type) for [5151 URA](asset) for [this weekend](date)
+    - please send an [activity report](report_type) for [TRK-1234](report_type) for [this quarter](date)
+    - show me an [activities report](report_type) for [AAA-119](asset) between [10.02.2024](date) and [20.02.2024](date)
+    - generate [events report](report_type) for [YZA-778](asset) from [01.12.2024](date) to [31.12.2024](date)
+    - I want an [event report](report_type) for [KSA-8821](asset) for [last month](date)
+    - run an [events report](report_type) on [3688 FHD](asset) for [this year](date)
+    - generate [events report](report_type) for [3688 FHD](asset) and [TRK908](asset) from [01.01.2024](date) to [31.01.2024](date)
+    - show [event log report](report_type) for vehicles [ABC-123](asset) and [DEF-345](asset) for [this month](date)
+    - give me [activity report](report_type) for [KSA-8821](asset) and [5151 URA](asset) between [01.06.2024](date) and [30.06.2024](date)
+    - tell me [events report](report_type) of vehicle [3688 FHD](asset) from [5 june](date) to [22 september](date)
+    - give me [event report](report_type) for [ABC-123](asset) from [1 january](date) to [31 march](date)
+    - show me [events report](report_type) for [TRK908](asset) from [10 may](date) to [15 august](date)
+
+- intent: request_driver_behavior_report
+  examples: |
+    - driver behavior report
+    - driver report
+    - behaviour report
+    - driver behaviour report
+    - I need a [driver behavior report](report_type) for [John Doe](driver) from [05.01.25](date) to [31.05.25](date)
+    - generate a [driver behavior analysis report](report_type) for [Ahmed Khan](driver) between [05 Jan 2025](date) and [31 May 2025](date)
+    - show me the [driver behavior report](report_type) for [Mohammed Ali](driver) for [last 30 days](date)
+    - run a [driver behavior report](report_type) for [Sarah Smith](driver) from [01/02/24](date) to [28/02/24](date)
+    - I want to see the [driver behavior analysis report](report_type) for [Robert Johnson](driver) for [this month](date)
+    - give me the [driver behavior report](report_type) for [Ali Ahmed](driver) from [last week](date) to [today](date)
+    - give me the [driver behaviour report](report_type) of [Fahadullah Abdullah](driver) from [01.09.24](date) to [30.09.24](date)
+    - show [driver behavior report](report_type) for [Fahadullah](driver) between [01 September 2024](date) and [30 September 2024](date)
+    - I need a [driver performance report](report_type) for [Michael Brown](driver) from [01.03.2024](date) to [15.03.2024](date)
+    - generate a [driver report](report_type) for [David Wilson](driver) between [01.04.2024](date) and [30.04.2024](date)
+    - show me the [behaviour report](report_type) for [James Taylor](driver) for [last 7 days](date)
+    - run a [driver performance report](report_type) for [Maria Garcia](driver) from [01/05/24](date) to [31/05/24](date)
+    - I want to see the [behavior report](report_type) for [Jennifer Lee](driver) for [this quarter](date)
+    - give me the [driver behaviour report](report_type) for [William Clark](driver) from [01.06.2024](date) to [30.06.2024](date)
+    - show [driver performance report](report_type) for [Emma Martinez](driver) between [01.10.2024](date) and [31.10.2024](date)
+    - I need a [driver behavior analysis report](report_type) for [Christopher Rodriguez](driver) from [01.07.2024](date) to [31.07.2024](date)
+    - generate a [driver report](report_type) for [Jessica Hernandez](driver) between [01.08.2024](date) and [31.08.2024](date)
+    - show me the [driver behavior report](report_type) for [Daniel Martinez](driver) for [last 6 months](date)
+    - run a [driver performance report](report_type) for [Michelle Lewis](driver) from [01.09.2024](date) to [30.09.2024](date)
+    - I want to see the [behaviour report](report_type) for [Richard Robinson](driver) for [this year](date)
+    - give me the [driver behavior report](report_type) for [Sarah Wilson](driver) from [01.10.2024](date) to [31.10.2024](date)
+    - show [driver performance report](report_type) for [Thomas Anderson](driver) between [01.11.2024](date) and [30.11.2024](date)
+    - I need a [driver behaviour report](report_type) for [Lisa White](driver) from [01.11.2024](date) to [30.11.2024](date)
+    - generate a [driver behavior analysis report](report_type) for [Charles Harris](driver) between [01.12.2024](date) and [31.12.2024](date)
+    - show me the [driver performance report](report_type) for [Amanda Scott](driver) for [yesterday](date)
+    - run a [driver report](report_type) for [Steven King](driver) from [01.01.2023](date) to [31.12.2023](date)
+    - I want to see the [behavior report](report_type) for [Nancy Allen](driver) for [last month](date)
+    - give me the [driver behaviour report](report_type) for [Kevin Wright](driver) from [01.11.2023](date) to [30.11.2023](date)
+    - show [driver behavior report](report_type) for [Laura Hall](driver) between [01 December 2023](date) and [31 December 2023](date)
+    - I need a [driver performance report](report_type) for [Edward Baker](driver) for [this weekend](date)
+    - tell me [driver behavior report](report_type) for [John Doe](driver) from [5 june](date) to [22 september](date)
+    - give me [driver behaviour report](report_type) for [Ahmed Khan](driver) from [1 january](date) to [31 march](date)
+    - show me [driver performance report](report_type) for [Sarah Smith](driver) from [10 may](date) to [15 august](date)
+
+- intent: request_over_speeding_report
+  examples: |
+    - over speeding report
+    - speeding report
+    - speed report
+    - speed violation report
+    - Over Speeding Report
+    - I need an [over speeding report](report_type) for [ABC-123](asset) from [05.01.25](date) to [07.05.25](date)
+    - generate an [over-speeding report](report_type) for [3688 FHD](asset) between [05 Jan 2025](date) and [31 Jan 2025](date)
+    - show me the [over speeding report](report_type) details for [KSA-8821](asset) for [last 15 days](date)
+    - run an [over speeding report](report_type) on [TRK908](asset) for [yesterday](date)
+    - please provide a [speeding report](report_type) for [DEF-345](asset) from [01/05/24](date) to [31/05/24](date)
+    - I need a [speed violation report](report_type) for [5151 URA](asset) between [01.01.2024](date) and [15.01.2024](date)
+    - give me a [speed violations report](report_type) for [TRK-1234](asset) from [01/02/24](date) to [28/02/24](date)
+    - show [over speed report](report_type) for [AAA-119](asset) covering [01.04.2024](date) to [10.04.2024](date)
+    - generate a [speed report](report_type) for [YZA-778](asset) from [01/06/24](date) to [15/06/24](date)
+    - [over-speeding report](report_type) for [ABC-123](asset) between [01 March 2024](date) and [10 March 2024](date)
+    - run [over speeding report](report_type) on [60408C26](asset) for [last 7 days](date)
+    - I need [speeding report](report_type) for [KSA-8821](asset) for [this week](date)
+    - give me [speed violation report](report_type) for [3688 FHD](asset) for [this month](date)
+    - show [speed violations report](report_type) for [TRK908](asset) for [last year](date)
+    - generate [over speed report](report_type) for [DEF-345](asset) for [this year](date)
+    - I want a [speed report](report_type) for [5151 URA](asset) from [01.09.24](date) to [30.09.24](date)
+    - please run an [over-speeding report](report_type) for [TRK-1234](asset) between [01.07.2024](date) and [31.07.2024](date)
+    - show [over speeding report](report_type) for [AAA-119](asset) from [01/08/24](date) to [31/08/24](date)
+    - I need a [speeding report](report_type) for [YZA-778](asset) for [last 6 months](date)
+    - give me [speed violation report](report_type) for [ABC-123](asset) for [today](date)
+    - run [speed violations report](report_type) on [3688 FHD](asset) between [01.11.2024](date) and [30.11.2024](date)
+    - show [over speed report](report_type) for [KSA-8821](asset) from [01.09.2024](date) to [30.09.2024](date)
+    - generate [speed report](report_type) for [TRK908](asset) from [01.10.2024](date) to [31.10.2024](date)
+    - get [over-speeding report](report_type) for [DEF-345](asset) on [10.03.2024](date)
+    - I need [over speeding report](report_type) for [5151 URA](asset) for [this weekend](date)
+    - please send a [speeding report](report_type) for [TRK-1234](report_type) for [this quarter](date)
+    - show me a [speed violation report](report_type) for [AAA-119](asset) between [10.02.2024](date) and [20.02.2024](date)
+    - generate [speed violations report](report_type) for [YZA-778](asset) from [01.12.2024](date) to [31.12.2024](date)
+    - I want an [over speed report](report_type) for [KSA-8821](asset) for [last month](date)
+    - run a [speed report](report_type) on [3688 FHD](asset) for [this year](date)
+    - generate [over speeding report](report_type) for [3688 FHD](asset) and [TRK908](asset) from [01.01.2024](date) to [31.01.2024](date)
+    - show [speeding report](report_type) for vehicles [ABC-123](asset) and [DEF-345](asset) for [last week](date)
+    - give me [speed violation report](report_type) for [KSA-8821](asset) and [5151 URA](asset) between [01.04.2024](date) and [30.04.2024](date)
+    - tell me [over speeding report](report_type) of vehicle [3688 FHD](asset) from [5 june](date) to [22 september](date)
+    - give me [speeding report](report_type) for [ABC-123](asset) from [1 january](date) to [31 march](date)
+    - show me [over speeding report](report_type) for [TRK908](asset) from [10 may](date) to [15 august](date)
+
+- intent: provide_report_detail
+  examples: |
+    - it's the [trips report](report_type)
+    - run [trips statistics report](report_type)
+    - the plate numbers are [KSA-8821](asset) and [AAA-119](asset)
+    - [TRK908](asset) and [ABC123](asset)
+    - we only need it for [01-05-2024](date)
+    - from [2024-05-01](date) to [2024-05-10](date)
+    - for [March 10 2024](date)
+    - it's for vehicle [DEF-345](asset)
+    - just for [yesterday](date)
+    - for [last week](date)
+    - for [this month](date)
+    - from [1 Sep](date) to [30 Sep](date)
+    - between [1 September 2024](date) and [30 September 2024](date)
+    - for [September month](date)
+    - from [yesterday](date) to [today](date)
+    - for [next week](date)
+    - it's the [stop time report](report_type)
+    - it's the [fleet summary report](report_type)
+    - I meant the [fleet performance summary report](report_type)
+    - it's a [driver behavior report](report_type)
+    - show [over speeding report](report_type)
+    - I need [temperature and humidity report](report_type)
+    - generate [weight sensor report](report_type)
+    - run [commands history report](report_type)
+    - show [events report](report_type)
+    - give me [raw data report](report_type)
+    - I need [track data report](report_type)
+    - it's for [idle time report](report_type)
+    - show [utilization report](report_type)
+    - for [this quarter](date)
+    - covering [last 6 months](date)
+    - for [this year](date)
+    - from [1 Jan 2024](date) to [31 Dec 2024](date)
+    - just [today](date)
+    - for [this weekend](date)
+    - the report type is [fuel consumption](report_type)
+    - I need [odometer report](report_type)
+    - for [all vehicles](asset)
+    - just for [truck 123](asset)
+    - include [ABC-123](asset) and [DEF-456](asset)
+    - only for [vehicle KSA-8821](asset)
+    - from [last Monday](date) to [today](date)
+    - for the [previous month](date)
+    - between [Q1 2024](date) and [Q2 2024](date)
+    - for the [last 30 days](date)
+    - from [last month](date) until [now](date)
+    - [3688 fhd](asset)
+    - [390](asset)
+    - [243](asset)
+    - vehicle [3688 fhd](asset)
+    - plate [390](asset)
+    - for [3688 fhd](asset)
+    - [vehicle 390](asset)
+    - [vehicle 3688 fhd](asset)
+    - [390](asset)
+    - [3688 fhd](asset)
+    - [plate 390](asset)
+    - [plate 3688 fhd](asset)
+    - vehicle [390](asset)
+    - vehicle [3688 fhd](asset)
+    - plate [390](asset)
+    - plate [3688 fhd](asset)
+    - this year
+    - yesterday
+    - last week
+    - this month
+    - last 3 months
+    - last quarter
+    - first quarter
+    - Q1 2025
+
+- intent: request_fleet_info
+  examples: |
+    - what is current location of vehicle [3688 fhd](asset)?
+    - what is the current location of [390](asset)?
+    - where is vehicle [390](asset)?
+    - what is the name of driver of vehicle [390](asset)?
+    - who is driving [390](asset)?
+    - what is speed of vehicle [390](asset)?
+    - how fast is [390](asset) going?
+    - what is the plate type of the vehicle with plate number [123 ABC](asset)?
+    - get the latest location for vehicle with plate [123 ABC](asset)
+    - what device is installed on plate [123 ABC](asset)?
+    - show me the current status of [390](asset)
+    - is vehicle [390](asset) online?
+    - what is the odometer reading for [390](asset)?
+    - what is the fuel level of [390](asset)?
+    - what is the temperature in vehicle [390](asset)?
+    - when was [390](asset) last seen?
+    - tell me about vehicle [390](asset)
+    - what information do you have about [390](asset)?
+    - show me details of [390](asset)
+    - get current information for [390](asset)
+    - what is the status of [390](asset)?
+    - is [390](asset) moving?
+    - what is the ignition status of [390](asset)?
+    - who is the current driver of [390](asset)?
+    - what is the mileage of [390](asset)?
+    - show me the location of [390](asset)
+    - where is [390](asset) right now?
+    - get the position of [390](asset)
+    - what are the coordinates of [390](asset)?
+    - show me the address of [390](asset)
+    - what is the current speed of [390](asset)?
+    - how fast is [390](asset) moving?
+    - what is the velocity of [390](asset)?
+    - what is the driver name for [390](asset)?
+    - who is operating [390](asset)?
+    - what is the operator of [390](asset)?
+    - what is the plate type for [390](asset)?
+    - what type of plate does [390](asset) have?
+    - what device is on [390](asset)?
+    - what equipment is installed on [390](asset)?
+    - show me the last update time for [390](asset)
+    - when was [390](asset) last updated?
+    - what is the last known location of [390](asset)?
+    - get real-time data for [390](asset)
+    - show me live information about [390](asset)
+    - show me all trips for the vehicle with plate number [243](asset)
+    - show me all trips for [243](asset)
+    - list all trips for vehicle [243](asset)
+    - get all trips for [243](asset)
+    - what are all the trips for [243](asset)?
+    - show me trips for [243](asset)
+    - tell me about trips for vehicle [243](asset)
+    - what trips has [243](asset) made?
+    - show me all trips of [243](asset)
+    - get trips information for [243](asset)
+    - show me all events for vehicle [243](asset)
+    - list all events for [243](asset)
+    - what events occurred for [243](asset)?
+    - show me all stops for [243](asset)
+    - list all stops for vehicle [243](asset)
+    - show me all idle events for [243](asset)
+    - what are all the idle events for [243](asset)?
+    - list all idling events for plate [123 ABC](asset) [yesterday](date)
+    - list all idling events for [123 ABC](asset) [yesterday](date)
+    - List all Idling events for plate [123 ABC](asset) [yesterday](date)
+    - List all Idling events for [123 ABC](asset) [yesterday](date)
+    - show me all idling events for vehicle [123 ABC](asset)
+    - what are the idling events for [123 ABC](asset)?
+    - get all idling events for [123 ABC](asset)
+    - list idling events for [123 ABC](asset) [yesterday](date)
+    - show idling events for plate [123 ABC](asset)
+    - what idling events occurred for [123 ABC](asset)?
+    - list all idle events for plate [123 ABC](asset) [yesterday](date)
+    - List all idle events for [123 ABC](asset) [yesterday](date)
+    - show me all idle events for vehicle [123 ABC](asset)
+    - what are the idle events for [123 ABC](asset)?
+    - get all idle events for [123 ABC](asset)
+    - show me all speeding violations for [243](asset)
+    - list all speeding incidents for [243](asset)
+    - show me all commands sent to [243](asset)
+    - what commands were sent to [243](asset)?
+    - show me all data for [243](asset)
+    - get all information about [243](asset)
+    - show me everything about [243](asset)
+    - tell me all details for [243](asset)
+    - What is the name of driver of vehicle [5151 URA](asset)?
+    - What is the name of driver of vehicle number [5151 URA](asset)?
+    - tell me which events trigger on the [14 oct](date) for the vehicle [4545 DFG](asset)?
+    - tell me the highest speed of the vehicle [5151 UTA](asset) for [today](date)?
+    - what is the highest speed of the vehicle [5151 URA](asset) on [15 OCT](date)?
+    - What is the total distance traveled by vehicle [3234 TEB](asset) on [July 1, 2025](date)?
+    - What is the maximum speed recorded by vehicle [7458 TSA](asset) in the [last 24 hours](date)?
+    - What is the total distance traveled by vehicle [1019 VTB](asset) from [July 1st](date) to [today](date)?
+    - What is the last recorded GPS location of vehicle [3234 TEB](asset)?
+    - Which device is installed in [4871 SBA](asset) vehicle?
+    - What is the idle start time for vehicle [1442 ZSA](asset) on [July 9, 2025](date)?
+    - Is the vehicle [1993 NRA](asset) moving or IDLE?
+    - What is the driver associated with the longest idle period for vehicle [1442 ZSA](asset) on [July 9, 2025](date)?
+    - what is the engine status of [390](asset)?
+    - what is the battery voltage of [390](asset)?
+    - where is [390](asset) currently located?
+    - where was [390](asset) at [noon](date)?
+    - when did [390](asset) last move?
+    - when was the last update received from [390](asset)?
+    - who is assigned to drive [390](asset)?
+    - who was driving [390](asset) on [yesterday](date)?
+    - which vehicle has the highest mileage?
+    - which device model is installed on [390](asset)?
+    - how long has [390](asset) been idle?
+    - how does the fuel consumption look for [390](asset)?
+    - how much fuel does [390](asset) have?
+    - how much distance did [390](asset) travel [today](date)?
+    - how many trips has [390](asset) completed [this week](date)?
+    - how many events occurred for [390](asset) [yesterday](date)?
+    - why is [390](asset) showing offline?
+    - why did [390](asset) stop at that location?
+    - is [390](asset) currently active?
+    - is [390](asset) in motion right now?
+    - are there any alerts for [390](asset)?
+    - are all vehicles in the fleet online?
+    - did [390](asset) complete its route [today](date)?
+    - did [390](asset) exceed the speed limit [yesterday](date)?
+    - does [390](asset) have GPS tracking enabled?
+    - does [390](asset) support real-time monitoring?
+    - has [390](asset) been serviced recently?
+    - has [390](asset) reported any errors [today](date)?
+    - have all vehicles reported their status?
+    - have there been any incidents with [390](asset)?
+    - show me the route history for [390](asset)
+    - show me the maintenance schedule for [390](asset)
+    - give me the current status of [390](asset)
+    - give me details about [390](asset)
+    - tell me the last known position of [390](asset)
+    - tell me about the performance metrics for [390](asset)
+    - find the location of [390](asset)
+    - find all vehicles near [downtown](asset)
+    - track the movement of [390](asset)
+    - track [390](asset) for the [last hour](date)
+    - check the fuel level of [390](asset)
+    - check if [390](asset) is operational
+    - get the current coordinates of [390](asset)
+    - get the trip summary for [390](asset) [today](date)
+    - list all active vehicles
+    - list all vehicles assigned to [driver name](driver)
+    - locate [390](asset) on the map
+    - locate all vehicles in [zone A](asset)
+    - display the speed history for [390](asset)
+    - display the temperature readings for [390](asset)
+    - fetch the latest data for [390](asset)
+    - fetch all events for [390](asset) [yesterday](date)
+    - calculate the total distance for [390](asset) [this month](date)
+    - calculate the average speed of [390](asset) [today](date)
+    - compare the fuel efficiency of [390](asset) and [243](asset)
+    - compare the performance of [390](asset) [this week](date) vs [last week](date)
+    - any alerts for [390](asset)?
+    - any maintenance due for [390](asset)?
+    - all vehicles in the fleet
+    - all trips completed by [390](asset) [this month](date)
+    - which of the vehicles is closest to [downtown](asset)?
+    - which of the vehicles has the highest fuel consumption?
+
+- regex: date
+  examples: |
+    - (?i)\b(\d{4}[-/]\d{2}[-/]\d{2}|\d{2}[-/]\d{2}[-/]\d{4}|(?:jan|feb|mar|apr|may|june|july|aug|sep|oct|nov|dec)[a-z]*\s+\d{1,2}(?:,?\s+\d{4})?|\d{1,2}\s+(?:jan|feb|mar|apr|may|june|july|aug|sep|oct|nov|dec)[a-z]*(?:,?\s+\d{4})?|(?:last|this|next|previous)\s+(?:month|year|week|day|monday|tuesday|wednesday|thursday|friday|saturday|sunday)|(?:today|yesterday|tomorrow)|(?:jan|feb|mar|apr|may|june|july|aug|sep|oct|nov|dec)[a-z]*\s+\d{4}|q[1-4]\s+\d{4})\b
+
+- regex: asset
+  examples: |
+    - (?i)\b(?=[a-z0-9]*\d)[a-z0-9]{2,4}(?:[-\s]+[a-z0-9]{1,4})+\b
+
+- lookup: report_type
+  examples: |
+    - trips report
+    - trip report
+    - trip statistics report
+    - trips stats report
+    - trip stats report
+    - fleet summary report
+    - summary report
+    - fleet overview report
+    - fleet performance summary report
+    - fleet performance report
+    - performance report
+    - fuel consumption report
+    - fuel report
+    - fuel trip report
+    - consumption report
+    - fuel usage report
+    - odometer readings report
+    - odometer trip report
+    - odometer reading report
+    - mileage report
+    - distance report
+    - idle report
+    - idling report
+    - idling time report
+    - idle hours report
+    - stoppage report
+    - stop report
+    - stoppage time report
+    - stop hours report
+    - stop duration report
+    - work hour report
+    - work hours report
+    - utilization hours report
+    - work time report
+    - usage report
+    - raw report
+    - raw data report
+    - track data report
+    - all parameters report
+    - tracking data report
+    - tracking report
+    - gps data report
+    - location data report
+    - parameters report
+    - all data report
+    - over-speeding report
+    - speeding report
+    - speed violation report
+    - over speed report
+    - speed report
+    - temperature and humidity report
+    - temperature humidity report
+    - temp and humidity report
+    - temp & humidity report
+    - temp humidity report
+    - temperature report
+    - humidity report
+    - climate report
+    - environmental report
+    - weight-sensor report
+    - weight report
+    - sensor report
+    - weight data report
+    - load sensor report
+    - event report
+    - events report
+    - event log report
+    - event history report
+    - activity report
+    - activities report
+    - command history report
+    - command log report
+    - command report
+    - commands report
+    - driver behaviour report
+    - behavior report
+    - behaviour report
+    - driver performance report
+    - driver report
+    - driver's report
+
+- synonym: trips statistics report
+  examples: |
+    - trips report
+    - trip report
+    - trip statistics report
+    - trips stats report
+    - trip stats report
+
+- synonym: fleet summary report
+  examples: |
+    - fleet summary report
+    - summary report
+    - fleet overview report
+
+- synonym: fleet performance summary report
+  examples: |
+    - fleet performance summary report
+    - fleet performance report
+    - performance report
+
+- synonym: fuel trip consumption report
+  examples: |
+    - fuel consumption report
+    - fuel report
+    - fuel trip report
+    - consumption report
+    - fuel usage report
+
+- synonym: odometer report
+  examples: |
+    - odometer readings report
+    - odometer trip report
+    - odometer reading report
+    - mileage report
+    - distance report
+
+- synonym: idle time report
+  examples: |
+    - idle report
+    - idling report
+    - idling time report
+    - idle hours report
+
+- synonym: stop time report
+  examples: |
+    - stoppage report
+    - stop report
+    - stoppage time report
+    - stop hours report
+    - stop duration report
+
+- synonym: utilization report
+  examples: |
+    - work hour report
+    - work hours report
+    - utilization hours report
+    - work time report
+    - usage report
+
+- synonym: raw data report
+  examples: |
+    - raw report
+    - raw data report
+
+- synonym: track data report
+  examples: |
+    - track data report
+    - all parameters report
+    - tracking data report
+    - tracking report
+    - gps data report
+    - location data report
+    - parameters report
+    - all data report
+
+- synonym: over speeding report
+  examples: |
+    - over-speeding report
+    - speeding report
+    - speed violation report
+    - over speed report
+    - speed report
+
+- synonym: temperature & humidity report
+  examples: |
+    - temperature and humidity report
+    - temperature humidity report
+    - temp and humidity report
+    - temp & humidity report
+    - temp humidity report
+    - temperature report
+    - humidity report
+    - climate report
+    - environmental report
+
+- synonym: weight sensor report
+  examples: |
+    - weight-sensor report
+    - weight report
+    - sensor report
+    - weight data report
+    - load sensor report
+
+- synonym: commands history report
+  examples: |
+    - command history report
+    - command log report
+    - command report
+    - commands report
+
+- synonym: events report
+  examples: |
+    - event report
+    - events report
+    - event log report
+    - event history report
+    - activity report
+    - activities report
+
+- synonym: driver behavior report
+  examples: |
+    - driver behaviour report
+    - behavior report
+    - behaviour report
+    - driver performance report
+    - driver report
+    - driver's report

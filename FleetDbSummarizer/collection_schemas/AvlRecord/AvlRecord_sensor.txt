@@ -1,0 +1,19 @@
+Collection: AvlRecord
+Fields:
+- sensors.total_odometer: int
+- sensors.speed: int
+- sensors.battery_level: int
+- sensors.engine_rpm: int
+- sensors.engine_temperature: int
+- sensors.gsm_signal: int
+- sensors.gnss_status: int
+- sensors.power_status: int
+- sensors.external_voltage: int
+- sensors.direction_angle: int
+- sensors.engine_percent_load: int
+- sensors.fuel_level_litters: int
+- sensors.crash_detection: int
+- sensors.weight_value: float
+- sensors.temperature_value_s: string
+- sensors.humidity_value: int
+

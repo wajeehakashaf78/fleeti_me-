@@ -1,0 +1,19 @@
+Collection: AlertHistory
+Fields:
+- _id: uuid
+- alert_info.severity: string
+- alert_info.alert_message: string
+- alert_info.status: string
+- alert_info.priority: string
+- alert_info.avl_packet_id: string
+- alert_info.alert_rule_id: string
+- alert_info.type: string
+- alert_info.resolution: string
+- alert_info.location.address: string|null
+- alert_info.location.latitude: float
+- alert_info.location.longitude: float
+- alert_info.resolved_by: string
+- alert_info.action_performed_at: BSON Date
+- asset_info._id: string
+- created_at: BSON Date
+

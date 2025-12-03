@@ -1,0 +1,12 @@
+Collection: Asset
+Fields:
+- details.vehicle_capacity_specialization.fleet_capacity_tons: float|null
+- details.vehicle_capacity_specialization.pallet_capacity: int|null
+- details.vehicle_capacity_specialization.body_manufacturer: string|null
+- details.vehicle_capacity_specialization.outer_dimensions: string
+- details.vehicle_capacity_specialization.inner_dimensions: string
+- details.vehicle_capacity_specialization.number_of_axles: int|null
+- details.vehicle_capacity_specialization.axle_load: float|null
+- details.vehicle_capacity_specialization.number_of_doors: int|null
+- details.vehicle_capacity_specialization.tail_lift_presence: bool
+

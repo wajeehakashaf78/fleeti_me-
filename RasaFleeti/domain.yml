@@ -1,0 +1,123 @@
+version: "3.1"
+
+intents:
+  - request_trips_report
+  - request_idle_report
+  - request_stop_report
+  - provide_report_detail
+  - request_fleet_summary_report
+  - request_fleet_performance_report
+  - request_fuel_consumption_report
+  - request_odometer_report
+  - request_utilization_report
+  - request_raw_data_report
+  - request_track_data_report
+  - request_over_speeding_report
+  - request_temperature_humidity_report
+  - request_weight_sensor_report
+  - request_driver_behavior_report
+  - request_commands_history_report
+  - request_events_report
+  - request_fleet_info
+
+entities:
+  - report_type
+  - asset
+  - date
+  - driver
+
+slots:
+  report_type:
+    type: text
+    influence_conversation: true
+    mappings:
+      - type: from_entity
+        entity: report_type
+      - type: from_text
+        conditions:
+          - active_loop: report_form
+            requested_slot: report_type
+  
+  driver:
+    type: text
+    influence_conversation: true
+    mappings:
+      - type: from_entity
+        entity: driver
+  assets:
+    type: any
+    influence_conversation: false
+    mappings:
+      - type: from_text
+        conditions:
+          - active_loop: report_form
+            requested_slot: assets
+      - type: from_entity
+        entity: asset
+        conditions:
+          - active_loop: report_form
+            requested_slot: assets
+  assets_display:
+    type: any
+    influence_conversation: false
+    mappings:
+      - type: custom
+  date_range:
+    type: text
+    influence_conversation: false
+    mappings:
+      - type: from_text
+        conditions:
+          - active_loop: report_form
+            requested_slot: date_range
+  start_date:
+    type: text
+    influence_conversation: false
+    mappings:
+      - type: custom
+  end_date:
+    type: text
+    influence_conversation: false
+    mappings:
+      - type: custom
+  confirmed_assets:
+    type: any
+    influence_conversation: false
+    mappings:
+      - type: custom
+  confirmed_assets_display:
+    type: any
+    influence_conversation: false
+    mappings:
+      - type: custom
+
+responses:
+  utter_ask_report_form_report_type:
+  - text: "Which report do you need? (e.g. fleet statistics/trips report, fleet summary report, fleet performance summary report, fuel trip consumption report, odometer report, Utilization Report/Work Hour Report, Stop time report , idle time report , Raw Data Report , Track Data Report/All Parameters , Over Speeding Report , Driving Behaviour Report , Temperature & Humidity Report , Weight Sensor Report , Commands History Report , Events Report)"
+
+  utter_ask_report_form_assets:
+  - text: "What vehicle plate numbers should I use?"
+
+  utter_ask_report_form_date_range:
+  - text: "What date range should I use? You can provide one date or a start and end date. Supported formats: DD-MM-YYYY (e.g., 05-01-2025), DD.MM.YYYY (e.g., 05.01.2025), DD/MM/YYYY (e.g., 05/01/2025), or natural language (e.g., '2 june 2025', 'june 2, 2025')."
+
+  utter_ask_report_form_driver:
+  - text: "Please provide a driver name for the driver behavior report."
+
+forms:
+  report_form:
+    required_slots:
+      - report_type
+      - driver
+      - assets
+      - date_range
+
+actions:
+  - validate_report_form
+  - action_run_report
+  - action_handle_textual_fleet
+  - action_prompt_report_type
+
+session_config:
+  session_expiration_time: 60
+  carry_over_slots_to_new_session: True

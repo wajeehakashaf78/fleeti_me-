@@ -1,0 +1,9 @@
+Collection: Geofence
+Fields:
+- asset_assignments: array<object>
+- asset_assignments[].asset_id: string
+- asset_assignments[].asset_name: string
+- asset_assignments[].asset_type: string
+- asset_assignments[].asset_category: string
+- asset_assignments[].assigned_at: BSON Date
+

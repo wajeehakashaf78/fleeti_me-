@@ -1,0 +1,11 @@
+Collection: Driver
+Fields:
+- address_contact.email: string
+- address_contact.phone: string
+- address_contact.alternate_phone: string
+- address_contact.address.street: string
+- address_contact.address.city: string
+- address_contact.address.state: string
+- address_contact.address.zip_code: string
+- address_contact.address.country: string
+

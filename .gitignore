@@ -5,6 +5,12 @@ env/
 ENV/
 .venv
 
+RasaFleeti/venv3.10/
+
+RasaFleeti/.rasa/
+RasaFleeti/models/
+
+
 # Python cache
 __pycache__/
 *.py[cod]
@@ -12,7 +18,6 @@ __pycache__/
 *.so
 
 # Text files
-*.txt
 
 # Environment variables
 .env

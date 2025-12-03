@@ -1,0 +1,14 @@
+Collection: Driver
+Fields:
+- wasl_logs.response: string|null
+- wasl_logs.status: string
+- wasl_logs.wasl_driver_key: string|null
+- wasl_logs.wasl_company_key: string|null
+- wasl_logs.company_identity_no: string
+- wasl_logs.added_by_datetime: BSON Date
+- wasl_logs.added_by_user_id: string|null
+- wasl_logs.register_on_wasl: bool
+- wasl_logs.is_wasl: bool|null
+- wasl_logs.activity: string|null
+- wasl_logs.created_at: BSON Date|null
+

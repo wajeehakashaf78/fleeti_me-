@@ -1,0 +1,12 @@
+Collection: AlertRule
+Fields:
+- condition.condition_category: string
+- condition.event_based_conditions: array
+- condition.value_based_conditions: array<object>
+- condition.value_based_conditions[].parameter: string
+- condition.value_based_conditions[].operator: string
+- condition.value_based_conditions[].value: int
+- condition.value_based_conditions[].time_window: string
+- condition.value_based_conditions[].unit: string
+- condition.logic_based_conditions: array
+

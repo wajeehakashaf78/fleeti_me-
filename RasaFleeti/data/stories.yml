@@ -1,0 +1,981 @@
+version: "3.1"
+
+stories:
+- story: provide details during form
+  steps:
+  - intent: request_trips_report
+    entities:
+      - report_type: trips report
+      - asset: ABC-123
+  - action: report_form
+  - active_loop: report_form
+  - intent: provide_report_detail
+  - action: report_form
+  - active_loop: null
+  - action: action_run_report
+
+# trips report and fleet statistics report 
+
+- story: trips fleet statistics report request
+  steps:
+  - intent: request_trips_report
+  - action: report_form
+  - active_loop: report_form
+  - active_loop: null
+  - action: action_run_report
+
+- story: trips fleet statistics report with plate provided
+  steps:
+  - intent: request_trips_report
+    entities:
+      - asset: 5151 URA
+  - action: report_form
+  - active_loop: report_form
+  - slot_was_set:
+    - assets: "5151 URA"
+  - active_loop: null
+  - action: action_run_report
+
+- story: trips fleet statistics report all details in one message
+  steps:
+  - intent: request_trips_report
+    entities:
+      - report_type: trips time report
+      - asset: ABC-123
+      - date: 2024-03-01
+      - date: 2024-03-07
+  - action: report_form
+  - active_loop: report_form
+  - active_loop: null
+  - action: action_run_report
+
+- story: trips fleet statistics report asset first then rest
+  steps:
+  - intent: request_trips_report
+    entities:
+      - asset: ABC-123
+  - action: report_form
+  - active_loop: report_form
+  - intent: provide_report_detail
+    entities:
+      - report_type: trips report
+      - date: 2024-03-01
+      - date: 2024-03-05
+  - action: report_form
+  - active_loop: null
+  - action: action_run_report
+
+- story: trips fleet statistics report vague then clarify
+  steps:
+  - intent: request_trips_report
+  - action: report_form
+  - active_loop: report_form
+  - intent: provide_report_detail
+    entities:
+      - asset: DEF-345
+      - date: 2024-04-01
+      - date: 2024-04-10
+  - action: report_form
+  - active_loop: null
+  - action: action_run_report
+
+# fleet performance summary report stories
+
+- story: fleet performance summary report request
+  steps:
+  - intent: request_fleet_performance_report
+  - action: report_form
+  - active_loop: report_form
+  - active_loop: null
+  - action: action_run_report
+
+- story: fleet performance report request
+  steps:
+  - intent: request_fleet_performance_report
+  - action: report_form
+  - active_loop: report_form
+  - active_loop: null
+  - action: action_run_report
+
+- story: fleet performance report with date range
+  steps:
+  - intent: request_fleet_performance_report
+    entities:
+      - date: 2024-05-01
+      - date: 2024-05-31
+  - action: report_form
+  - active_loop: report_form
+  - active_loop: null
+  - action: action_run_report
+
+- story: fleet performance report all details in one message
+  steps:
+  - intent: request_fleet_performance_report
+    entities:
+      - report_type: fleet performance report
+      - date: 2024-05-01
+      - date: 2024-05-31
+  - action: report_form
+  - active_loop: report_form
+  - active_loop: null
+  - action: action_run_report
+
+- story: fleet performance report vague then clarify
+  steps:
+  - intent: request_fleet_performance_report
+  - action: report_form
+  - active_loop: report_form
+  - intent: provide_report_detail
+    entities:
+      - date: 2024-04-01
+      - date: 2024-04-10
+  - action: report_form
+  - active_loop: null
+  - action: action_run_report
+
+# fleet summary report stories
+
+- story: fleet summary report request
+  steps:
+  - intent: request_fleet_summary_report
+  - action: report_form
+  - active_loop: report_form
+  - active_loop: null
+  - action: action_run_report
+
+
+# fuel trip consumption report stories
+
+- story: fuel trip consumption report request
+  steps:
+  - intent: request_fuel_consumption_report
+  - action: report_form
+  - active_loop: report_form
+  - active_loop: null
+  - action: action_run_report
+
+- story: fuel consumption report request
+  steps:
+  - intent: request_fuel_consumption_report
+  - action: report_form
+  - active_loop: report_form
+  - active_loop: null
+  - action: action_run_report
+
+- story: fuel consumption report with plate provided
+  steps:
+  - intent: request_fuel_consumption_report
+    entities:
+      - asset: 5151 URA
+  - action: report_form
+  - active_loop: report_form
+  - slot_was_set:
+    - assets: "5151 URA"
+  - active_loop: null
+  - action: action_run_report
+
+- story: fuel consumption report asset first then rest
+  steps:
+  - intent: request_fuel_consumption_report
+    entities:
+      - asset: ABC-123
+  - action: report_form
+  - active_loop: report_form
+  - intent: provide_report_detail
+    entities:
+      - report_type: fuel consumption report
+      - date: 2024-03-01
+      - date: 2024-03-05
+  - action: report_form
+  - active_loop: null
+  - action: action_run_report
+
+- story: fuel consumption report all details in one message
+  steps:
+  - intent: request_fuel_consumption_report
+    entities:
+      - report_type: fuel consumption report
+      - asset: KSA-1234
+      - date: 2024-05-01
+      - date: 2024-05-31
+  - action: report_form
+  - active_loop: report_form
+  - active_loop: null
+  - action: action_run_report
+
+- story: fuel consumption report vague then clarify
+  steps:
+  - intent: request_fuel_consumption_report
+  - action: report_form
+  - active_loop: report_form
+  - intent: provide_report_detail
+    entities:
+      - asset: DEF-345
+      - date: 2024-04-01
+      - date: 2024-04-10
+  - action: report_form
+  - active_loop: null
+  - action: action_run_report
+
+# odometer report stories
+
+- story: odometer report request
+  steps:
+  - intent: request_odometer_report
+  - action: report_form
+  - active_loop: report_form
+  - active_loop: null
+  - action: action_run_report
+
+- story: odometer report with plate provided
+  steps:
+  - intent: request_odometer_report
+    entities:
+      - asset: 5151 URA
+  - action: report_form
+  - active_loop: report_form
+  - slot_was_set:
+    - assets: "5151 URA"
+  - active_loop: null
+  - action: action_run_report
+
+- story: odometer report asset first then rest
+  steps:
+  - intent: request_odometer_report
+    entities:
+      - asset: ABC-123
+  - action: report_form
+  - active_loop: report_form
+  - intent: provide_report_detail
+    entities:
+      - report_type: odometer report
+      - date: 2024-03-01
+      - date: 2024-03-05
+  - action: report_form
+  - active_loop: null
+  - action: action_run_report
+
+- story: odometer report all details in one message
+  steps:
+  - intent: request_odometer_report
+    entities:
+      - report_type: odometer report
+      - asset: KSA-1234
+      - date: 2024-05-01
+      - date: 2024-05-31
+  - action: report_form
+  - active_loop: report_form
+  - active_loop: null
+  - action: action_run_report
+
+- story: odometer report vague then clarify
+  steps:
+  - intent: request_odometer_report
+  - action: report_form
+  - active_loop: report_form
+  - intent: provide_report_detail
+    entities:
+      - asset: DEF-345
+      - date: 2024-04-01
+      - date: 2024-04-10
+  - action: report_form
+  - active_loop: null
+  - action: action_run_report
+
+# idle time report stories
+
+- story: idle time report request
+  steps:
+  - intent: request_idle_report
+  - action: report_form
+  - active_loop: report_form
+  - active_loop: null
+  - action: action_run_report
+
+- story: idle report with plate provided
+  steps:
+  - intent: request_idle_report
+    entities:
+      - asset: 5151 URA
+  - action: report_form
+  - active_loop: report_form
+  - slot_was_set:
+    - assets: "5151 URA"
+  - active_loop: null
+  - action: action_run_report
+
+- story: idle report all details in one message
+  steps:
+  - intent: request_idle_report
+    entities:
+      - report_type: idle time report
+      - asset: ABC-123
+      - date: 2024-03-01
+      - date: 2024-03-07
+  - action: report_form
+  - active_loop: report_form
+  - active_loop: null
+  - action: action_run_report
+
+- story: idle report asset first then rest
+  steps:
+  - intent: request_idle_report
+    entities:
+      - asset: ABC-123
+  - action: report_form
+  - active_loop: report_form
+  - intent: provide_report_detail
+    entities:
+      - report_type: idle time report
+      - date: 2024-03-01
+      - date: 2024-03-05
+  - action: report_form
+  - active_loop: null
+  - action: action_run_report
+
+- story: idle report vague then clarify
+  steps:
+  - intent: request_idle_report
+  - action: report_form
+  - active_loop: report_form
+  - intent: provide_report_detail
+    entities:
+      - asset: DEF-345
+      - date: 2024-04-01
+      - date: 2024-04-10
+  - action: report_form
+  - active_loop: null
+  - action: action_run_report
+
+
+# stop time report stories
+
+- story: stop time report request
+  steps:
+  - intent: request_stop_report
+  - action: report_form
+  - active_loop: report_form
+  - active_loop: null
+  - action: action_run_report
+
+- story: stop time report with plate provided
+  steps:
+  - intent: request_stop_report
+    entities:
+      - asset: 5151 URA
+  - action: report_form
+  - active_loop: report_form
+  - slot_was_set:
+    - assets: "5151 URA"
+  - active_loop: null
+  - action: action_run_report
+
+- story: stop time report all details in one message
+  steps:
+  - intent: request_stop_report
+    entities:
+      - report_type: stop time report
+      - asset: ABC-123
+      - date: 2024-03-01
+      - date: 2024-03-07
+  - action: report_form
+  - active_loop: report_form
+  - active_loop: null
+  - action: action_run_report
+
+- story: stop time report asset first then rest
+  steps:
+  - intent: request_stop_report
+    entities:
+      - asset: ABC-123
+  - action: report_form
+  - active_loop: report_form
+  - intent: provide_report_detail
+    entities:
+      - report_type: stop time report
+      - date: 2024-03-01
+      - date: 2024-03-05
+  - action: report_form
+  - active_loop: null
+  - action: action_run_report
+
+- story: stop time report vague then clarify
+  steps:
+  - intent: request_stop_report
+  - action: report_form
+  - active_loop: report_form
+  - intent: provide_report_detail
+    entities:
+      - asset: DEF-345
+      - date: 2024-04-01
+      - date: 2024-04-10
+  - action: report_form
+  - active_loop: null
+  - action: action_run_report
+
+# utilization report stories
+
+- story: utilization report request
+  steps:
+  - intent: request_utilization_report
+  - action: report_form
+  - active_loop: report_form
+  - active_loop: null
+  - action: action_run_report
+
+- story: utilization report with date
+  steps:
+  - intent: request_utilization_report
+    entities:
+      - date: 2024-01-01
+      - date: 2024-01-31
+  - action: report_form
+  - active_loop: report_form
+  - active_loop: null
+  - action: action_run_report
+
+- story: utilization report all details in one message
+  steps:
+  - intent: request_utilization_report
+    entities:
+      - report_type: utilization report
+      - date: 2024-03-01
+      - date: 2024-03-07
+  - action: report_form
+  - active_loop: report_form
+  - active_loop: null
+  - action: action_run_report
+
+- story: utilization report vague then clarify
+  steps:
+  - intent: request_utilization_report
+  - action: report_form
+  - active_loop: report_form
+  - intent: provide_report_detail
+    entities:
+      - date: 2024-04-01
+      - date: 2024-04-10
+  - action: report_form
+  - active_loop: null
+  - action: action_run_report
+
+# raw data report stories
+
+- story: raw data report request
+  steps:
+  - intent: request_raw_data_report
+  - action: report_form
+  - active_loop: report_form
+  - active_loop: null
+  - action: action_run_report
+
+- story: raw data report with plate provided
+  steps:
+  - intent: request_raw_data_report
+    entities:
+      - asset: 3688 FHD
+  - action: report_form
+  - active_loop: report_form
+  - slot_was_set:
+    - assets: "3688 FHD"
+  - active_loop: null
+  - action: action_run_report
+
+- story: raw data report all details in one message
+  steps:
+  - intent: request_raw_data_report
+    entities:
+      - report_type: raw data report
+      - asset: KSA-8821
+      - date: 2024-05-01
+      - date: 2024-05-31
+  - action: report_form
+  - active_loop: report_form
+  - active_loop: null
+  - action: action_run_report
+
+- story: raw data report asset first then rest
+  steps:
+  - intent: request_raw_data_report
+    entities:
+      - asset: AAA-119
+  - action: report_form
+  - active_loop: report_form
+  - intent: provide_report_detail
+    entities:
+      - report_type: raw data report
+      - date: 2024-06-01
+      - date: 2024-06-15
+  - action: report_form
+  - active_loop: null
+  - action: action_run_report
+
+- story: raw data report vague then clarify
+  steps:
+  - intent: request_raw_data_report
+  - action: report_form
+  - active_loop: report_form
+  - intent: provide_report_detail
+    entities:
+      - asset: DEF-345
+      - date: 2024-04-01
+      - date: 2024-04-10
+  - action: report_form
+  - active_loop: null
+  - action: action_run_report
+
+# over speeding report stories
+
+- story: over speeding report request
+  steps:
+  - intent: request_over_speeding_report
+  - action: report_form
+  - active_loop: report_form
+  - active_loop: null
+  - action: action_run_report
+
+- story: over speeding report with plate provided
+  steps:
+  - intent: request_over_speeding_report
+    entities:
+      - asset: 3688 FHD
+  - action: report_form
+  - active_loop: report_form
+  - slot_was_set:
+    - assets: "3688 FHD"
+  - active_loop: null
+  - action: action_run_report
+
+- story: over speeding report all details in one message
+  steps:
+  - intent: request_over_speeding_report
+    entities:
+      - report_type: over speeding report
+      - asset: KSA-8821
+      - date: 2024-05-01
+      - date: 2024-05-31
+  - action: report_form
+  - active_loop: report_form
+  - active_loop: null
+  - action: action_run_report
+
+- story: over speeding report asset first then rest
+  steps:
+  - intent: request_over_speeding_report
+    entities:
+      - asset: AAA-119
+  - action: report_form
+  - active_loop: report_form
+  - intent: provide_report_detail
+    entities:
+      - report_type: over speeding report
+      - date: 2024-06-01
+      - date: 2024-06-15
+  - action: report_form
+  - active_loop: null
+  - action: action_run_report
+
+- story: over speeding report vague then clarify
+  steps:
+  - intent: request_over_speeding_report
+  - action: report_form
+  - active_loop: report_form
+  - intent: provide_report_detail
+    entities:
+      - asset: TRK-908
+      - date: 2024-04-01
+      - date: 2024-04-10
+  - action: report_form
+  - active_loop: null
+  - action: action_run_report
+
+# track data report stories
+
+- story: track data report request
+  steps:
+  - intent: request_track_data_report
+  - action: report_form
+  - active_loop: report_form
+  - active_loop: null
+  - action: action_run_report
+
+- story: track data report with plate provided
+  steps:
+  - intent: request_track_data_report
+    entities:
+      - asset: 3688 FHD
+  - action: report_form
+  - active_loop: report_form
+  - slot_was_set:
+    - assets: "3688 FHD"
+  - active_loop: null
+  - action: action_run_report
+
+- story: track data report all details in one message
+  steps:
+  - intent: request_track_data_report
+    entities:
+      - report_type: track data report
+      - asset: KSA-8821
+      - date: 2024-05-01
+      - date: 2024-05-31
+  - action: report_form
+  - active_loop: report_form
+  - active_loop: null
+  - action: action_run_report
+
+- story: track data report asset first then rest
+  steps:
+  - intent: request_track_data_report
+    entities:
+      - asset: AAA-119
+  - action: report_form
+  - active_loop: report_form
+  - intent: provide_report_detail
+    entities:
+      - report_type: track data report
+      - date: 2024-06-01
+      - date: 2024-06-15
+  - action: report_form
+  - active_loop: null
+  - action: action_run_report
+
+- story: track data report vague then clarify
+  steps:
+  - intent: request_track_data_report
+  - action: report_form
+  - active_loop: report_form
+  - intent: provide_report_detail
+    entities:
+      - asset: TRK-908
+      - date: 2024-04-01
+      - date: 2024-04-10
+  - action: report_form
+  - active_loop: null
+  - action: action_run_report
+
+# temperature & humidity report stories
+
+- story: temperature & humidity report request
+  steps:
+  - intent: request_temperature_humidity_report
+  - action: report_form
+  - active_loop: report_form
+  - active_loop: null
+  - action: action_run_report
+
+- story: temperature & humidity report with plate provided
+  steps:
+  - intent: request_temperature_humidity_report
+    entities:
+      - asset: 3688 FHD
+  - action: report_form
+  - active_loop: report_form
+  - slot_was_set:
+    - assets: "3688 FHD"
+  - active_loop: null
+  - action: action_run_report
+
+- story: temperature & humidity report all details in one message
+  steps:
+  - intent: request_temperature_humidity_report
+    entities:
+      - report_type: temperature & humidity report
+      - asset: KSA-8821
+      - date: 2024-05-01
+      - date: 2024-05-31
+  - action: report_form
+  - active_loop: report_form
+  - active_loop: null
+  - action: action_run_report
+
+- story: temperature & humidity report asset first then rest
+  steps:
+  - intent: request_temperature_humidity_report
+    entities:
+      - asset: AAA-119
+  - action: report_form
+  - active_loop: report_form
+  - intent: provide_report_detail
+    entities:
+      - report_type: temperature & humidity report
+      - date: 2024-06-01
+      - date: 2024-06-15
+  - action: report_form
+  - active_loop: null
+  - action: action_run_report
+
+- story: temperature & humidity report vague then clarify
+  steps:
+  - intent: request_temperature_humidity_report
+  - action: report_form
+  - active_loop: report_form
+  - intent: provide_report_detail
+    entities:
+      - asset: TRK-908
+      - date: 2024-04-01
+      - date: 2024-04-10
+  - action: report_form
+  - active_loop: null
+  - action: action_run_report
+
+# weight sensor report stories
+
+- story: weight sensor report request
+  steps:
+  - intent: request_weight_sensor_report
+  - action: report_form
+  - active_loop: report_form
+  - active_loop: null
+  - action: action_run_report
+
+- story: weight sensor report with plate provided
+  steps:
+  - intent: request_weight_sensor_report
+    entities:
+      - asset: 3688 FHD
+  - action: report_form
+  - active_loop: report_form
+  - slot_was_set:
+    - assets: "3688 FHD"
+  - active_loop: null
+  - action: action_run_report
+
+- story: weight sensor report all details in one message
+  steps:
+  - intent: request_weight_sensor_report
+    entities:
+      - report_type: weight sensor report
+      - asset: KSA-8821
+      - date: 2024-05-01
+      - date: 2024-05-31
+  - action: report_form
+  - active_loop: report_form
+  - active_loop: null
+  - action: action_run_report
+
+- story: weight sensor report asset first then rest
+  steps:
+  - intent: request_weight_sensor_report
+    entities:
+      - asset: AAA-119
+  - action: report_form
+  - active_loop: report_form
+  - intent: provide_report_detail
+    entities:
+      - report_type: weight sensor report
+      - date: 2024-06-01
+      - date: 2024-06-15
+  - action: report_form
+  - active_loop: null
+  - action: action_run_report
+
+- story: weight sensor report vague then clarify
+  steps:
+  - intent: request_weight_sensor_report
+  - action: report_form
+  - active_loop: report_form
+  - intent: provide_report_detail
+    entities:
+      - asset: TRK-908
+      - date: 2024-04-01
+      - date: 2024-04-10
+  - action: report_form
+  - active_loop: null
+  - action: action_run_report
+
+# commands history report stories
+
+- story: commands history report request
+  steps:
+  - intent: request_commands_history_report
+  - action: report_form
+  - active_loop: report_form
+  - active_loop: null
+  - action: action_run_report
+
+- story: commands history report with plate provided
+  steps:
+  - intent: request_commands_history_report
+    entities:
+      - asset: 3688 FHD
+  - action: report_form
+  - active_loop: report_form
+  - slot_was_set:
+    - assets: "3688 FHD"
+  - active_loop: null
+  - action: action_run_report
+
+- story: commands history report all details in one message
+  steps:
+  - intent: request_commands_history_report
+    entities:
+      - report_type: commands history report
+      - asset: KSA-8821
+      - date: 2024-05-01
+      - date: 2024-05-31
+  - action: report_form
+  - active_loop: report_form
+  - active_loop: null
+  - action: action_run_report
+
+- story: commands history report asset first then rest
+  steps:
+  - intent: request_commands_history_report
+    entities:
+      - asset: AAA-119
+  - action: report_form
+  - active_loop: report_form
+  - intent: provide_report_detail
+    entities:
+      - report_type: commands history report
+      - date: 2024-06-01
+      - date: 2024-06-15
+  - action: report_form
+  - active_loop: null
+  - action: action_run_report
+
+- story: commands history report vague then clarify
+  steps:
+  - intent: request_commands_history_report
+  - action: report_form
+  - active_loop: report_form
+  - intent: provide_report_detail
+    entities:
+      - asset: TRK-908
+      - date: 2024-04-01
+      - date: 2024-04-10
+  - action: report_form
+  - active_loop: null
+  - action: action_run_report
+
+# events report stories
+
+- story: events report request
+  steps:
+  - intent: request_events_report
+  - action: report_form
+  - active_loop: report_form
+  - active_loop: null
+  - action: action_run_report
+
+- story: events report with plate provided
+  steps:
+  - intent: request_events_report
+    entities:
+      - asset: 3688 FHD
+  - action: report_form
+  - active_loop: report_form
+  - slot_was_set:
+    - assets: "3688 FHD"
+  - active_loop: null
+  - action: action_run_report
+
+- story: events report all details in one message
+  steps:
+  - intent: request_events_report
+    entities:
+      - report_type: events report
+      - asset: KSA-8821
+      - date: 2024-05-01
+      - date: 2024-05-31
+  - action: report_form
+  - active_loop: report_form
+  - active_loop: null
+  - action: action_run_report
+
+- story: events report asset first then rest
+  steps:
+  - intent: request_events_report
+    entities:
+      - asset: AAA-119
+  - action: report_form
+  - active_loop: report_form
+  - intent: provide_report_detail
+    entities:
+      - report_type: events report
+      - date: 2024-06-01
+      - date: 2024-06-15
+  - action: report_form
+  - active_loop: null
+  - action: action_run_report
+
+- story: events report vague then clarify
+  steps:
+  - intent: request_events_report
+  - action: report_form
+  - active_loop: report_form
+  - intent: provide_report_detail
+    entities:
+      - asset: TRK-908
+      - date: 2024-04-01
+      - date: 2024-04-10
+  - action: report_form
+  - active_loop: null
+  - action: action_run_report
+
+
+# driver behaviour report stories
+
+- story: driver behaviour report request
+  steps:
+  - intent: request_driver_behavior_report
+  - action: report_form
+  - active_loop: report_form
+  - active_loop: null
+  - action: action_run_report
+
+- story: driver behaviour report with driver provided
+  steps:
+  - intent: request_driver_behavior_report
+    entities:
+      - driver: John Smith
+  - action: report_form
+  - active_loop: report_form
+  - slot_was_set:
+    - driver: "John Smith"
+  - active_loop: null
+  - action: action_run_report
+
+- story: driver behaviour report all details in one message
+  steps:
+  - intent: request_driver_behavior_report
+    entities:
+      - report_type: driver behaviour report
+      - driver: Ahmed Khan
+      - date: 2024-05-01
+      - date: 2024-05-31
+  - action: report_form
+  - active_loop: report_form
+  - active_loop: null
+  - action: action_run_report
+
+- story: driver behaviour report driver first then rest
+  steps:
+  - intent: request_driver_behavior_report
+    entities:
+      - driver: Sarah Johnson
+  - action: report_form
+  - active_loop: report_form
+  - intent: provide_report_detail
+    entities:
+      - report_type: driver behaviour report
+      - date: 2024-06-01
+      - date: 2024-06-15
+  - action: report_form
+  - active_loop: null
+  - action: action_run_report
+
+- story: driver behaviour report vague then clarify
+  steps:
+  - intent: request_driver_behavior_report
+  - action: report_form
+  - active_loop: report_form
+  - intent: provide_report_detail
+    entities:
+      - driver: Robert Williams
+      - date: 2024-04-01
+      - date: 2024-04-10
+  - action: report_form
+  - active_loop: null
+  - action: action_run_report

@@ -1,0 +1,12 @@
+Collection: Driver
+Fields:
+- analytics.total_miles_driven: int
+- analytics.total_hours_worked: int
+- analytics.average_speed_compliance: int
+- analytics.fuel_consumption_efficiency: int
+- analytics.maintenance_requests_submitted: int
+- analytics.customer_complaints_received: int
+- analytics.customer_compliments_received: int
+- analytics.training_hours_completed: int
+- analytics.incident_reports_submitted: int
+
