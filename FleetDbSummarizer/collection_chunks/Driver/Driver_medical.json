@@ -1,0 +1,13 @@
+{
+    "medical": {
+      "medical_certificate_expiry": {
+        "$date": "2025-10-24T00:00:00.000Z"
+      },
+      "medical_certificate_status": 0,
+      "blood_type": 0,
+      "medicial_certification": "b05fe224-4a94-425d-b30e-cf0a2acd1a84",
+      "allergies": [],
+      "medications": [],
+      "fitness_for_duty": 0
+    }
+  }

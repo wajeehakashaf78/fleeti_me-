@@ -1,0 +1,20 @@
+{
+    "harsh_braking_occurrence": 28,
+    "harsh_acceleration_occurrence": 44,
+    "harsh_cornering_occurrence": 1,
+    "over_speeding_occurrence": 3,
+    "idling_occurrence": 1,
+    "zigzagging_occurrence": 0,
+    "crashing_count": 0,
+    "sudden_stop_count": 0,
+    "sharp_turn_count": 0,
+    "frequent_start_stop_count": 0,
+    "fuel_consumed_ltrs": 0,
+    "fuel_refill_count": 221,
+    "behaviour_score": 28,
+    "safety_score": 20,
+    "packet_info": {
+      "movement": 239,
+      "idling": 231
+    }
+  }

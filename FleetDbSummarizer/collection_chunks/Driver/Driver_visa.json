@@ -1,0 +1,14 @@
+{
+    "visa": {
+      "visa_type": 1,
+      "issuing_country": "AX",
+      "issue_date": {
+        "$date": "2025-10-21T00:00:00.000Z"
+      },
+      "expiry_date": {
+        "$date": "2025-10-24T00:00:00.000Z"
+      },
+      "status": 1,
+      "visa_image": "69c7282e-96d0-4b9f-89b4-8122a4d00348"
+    }
+  }

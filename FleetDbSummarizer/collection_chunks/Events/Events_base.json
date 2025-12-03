@@ -1,0 +1,27 @@
+{
+    "_id": "a33f47b9-65d3-4866-949e-699918881585",
+    "event_type": "harsh_acceleration",
+    "sub_tenant_id": "",
+    "speed": 31,
+    "duration": 0,
+    "timestamp": {
+      "$date": "2025-10-22T04:47:26.000Z"
+    },
+    "location": {
+      "type": "Point",
+      "coordinates": [
+        31.4279916,
+        74.2495516
+      ]
+    },
+    "created_at": {
+      "$date": "2025-10-23T11:57:56.784Z"
+    },
+    "defined_time_window": 0,
+    "device_context": {
+      "asset_id": "60408c26-9f94-4a15-91f1-c5839c92bc89",
+      "driver_info": {
+        "id": "9b1e3144-7622-48f4-b766-8ac40599234c"
+        }
+    }
+  }

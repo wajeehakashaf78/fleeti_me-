@@ -1,0 +1,12 @@
+{
+    "details": {
+      "maintenance_logs": {
+        "last_service_date": null,
+        "next_service_due": null,
+        "maintenance_schedule": null,
+        "last_tyre_change_date": null,
+        "next_tyre_change_due": null,
+        "tyre_change_schedule": null
+      }
+    }
+  }

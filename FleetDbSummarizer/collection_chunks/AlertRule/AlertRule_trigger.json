@@ -1,0 +1,8 @@
+{
+    "trigger": {
+      "trigger_frequency": "EveryTimeConditionIsMet",
+      "enable_cooldown_period": false,
+      "period": 1,
+      "units": "Minutes"
+    }
+  }

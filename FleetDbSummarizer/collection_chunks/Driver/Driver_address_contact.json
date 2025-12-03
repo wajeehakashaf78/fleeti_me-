@@ -1,0 +1,14 @@
+{
+  "address_contact": {
+    "email": "Azka@gmail.com",
+    "phone": "+966534353453",
+    "alternate_phone": "",
+    "address": {
+      "street": "test",
+      "city": "Ashkāsham",
+      "state": "BDS",
+      "zip_code": "",
+      "country": "AF"
+    }
+  }
+}

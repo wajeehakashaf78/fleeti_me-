@@ -1,0 +1,11 @@
+{
+  "details": {
+      "document_status_flags": {
+        "mvpi_expiry": null,
+        "istimara_expiry": null,
+        "operation_card_expiry": null,
+        "insurance_expiry": null,
+        "barrier_certificate_expiry": null
+      }
+    }
+  }

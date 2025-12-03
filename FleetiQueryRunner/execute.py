@@ -1,0 +1,336 @@
+# file: run_llm_mongo.py
+import os
+import re
+import json
+from typing import Any, Dict, List, Tuple, Union, Iterable
+
+from dotenv import load_dotenv
+from pymongo import MongoClient
+from datetime import datetime, timezone
+from dateutil import parser as dtparser
+from bson import ObjectId
+
+try:
+    import json5  # tolerant parsing: unquoted keys, trailing commas, single quotes
+except ImportError:
+    json5 = None
+
+try:
+    import yaml  # final fallback parser
+except ImportError:
+    yaml = None
+
+MongoPayload = Union[List[Dict[str, Any]], Dict[str, Any]]
+
+# ---------------------------
+# String cleanup & extraction
+# ---------------------------
+
+def _clean_raw_response(raw: str) -> str:
+    """
+    Normalize a raw LLM mongo snippet:
+    - strip code fences/backticks
+    - unescape visible \n and \t
+    - remove wrapping quotes
+    """
+    s = raw.strip()
+    
+    # Remove markdown code blocks (```javascript, ```json, ```, etc.)
+    s = re.sub(r"^```[a-zA-Z]*\n?", "", s, flags=re.MULTILINE)
+    s = re.sub(r"\n?```\s*$", "", s, flags=re.MULTILINE)
+    
+    # Remove any leading/trailing whitespace
+    s = s.strip()
+    
+    # Unescape visible \n and \t
+    s = s.replace("\\n", "\n").replace("\\t", "\t")
+    
+    # Remove wrapping quotes if the entire string is quoted
+    if (s.startswith('"') and s.endswith('"')) or (s.startswith("'") and s.endswith("'")):
+        s = s[1:-1]
+    
+    return s.strip()
+
+def _replace_js_constructors(s: str) -> str:
+    """
+    Replace Mongo shell constructors with Extended JSON so tolerant loaders can parse:
+      ISODate("...")    -> {"$date": "..."}
+      ObjectId("...")   -> {"$oid": "..."}
+      NumberLong("...") -> {"$numberLong":"..."}
+    """
+    s = re.sub(r'\bObjectId\(\s*"([^"]+)"\s*\)', r'{"$oid":"\1"}', s)
+    s = re.sub(r'\bISODate\(\s*"([^"]+)"\s*\)', r'{"$date":"\1"}', s)
+    s = re.sub(r'\bNumberLong\(\s*"([^"]+)"\s*\)', r'{"$numberLong":"\1"}', s)
+    s = re.sub(r'\bNumberLong\(\s*([0-9]+)\s*\)', r'{"$numberLong":"\1"}', s)
+    return s
+
+def _extract_collection_and_op(s: str) -> Tuple[str, str, str]:
+    """
+    Returns (collection_name, operation, inside_args_str)
+    Supports:
+      db.Collection.aggregate([...])
+      db.Collection.find({...})
+    """
+    s_compact = re.sub(r"\s+", " ", s)
+    m = re.search(r"db\.([A-Za-z0-9_]+)\.(aggregate|find)\s*\(", s_compact)
+    if not m:
+        raise ValueError("Could not find 'db.<Collection>.(aggregate|find)(' in the raw response.")
+    coll = m.group(1)
+    op = m.group(2)
+
+    start_idx = s.find(f".{op}")
+    if start_idx == -1:
+        raise ValueError("Could not locate operation start in original string.")
+    paren_idx = s.find("(", start_idx)
+    if paren_idx == -1:
+        raise ValueError("Could not find '(' after operation.")
+
+    depth = 0
+    end_idx = None
+    for i in range(paren_idx, len(s)):
+        ch = s[i]
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+            if depth == 0:
+                end_idx = i
+                break
+    if end_idx is None:
+        raise ValueError("Unbalanced parentheses in the operation call.")
+
+    inside = s[paren_idx + 1: end_idx].strip()
+    return coll, op, inside
+
+# ---------------------------
+# Tolerant parsing
+# ---------------------------
+
+def _loads_tolerant(s: str):
+    """
+    Try strict JSON first, then JSON5, then YAML.
+    """
+    last_err = None
+    try:
+        return json.loads(s)
+    except Exception as e:
+        last_err = e
+
+    if json5 is not None:
+        try:
+            return json5.loads(s)
+        except Exception as e:
+            last_err = e
+
+    if yaml is not None:
+        try:
+            return yaml.safe_load(s)
+        except Exception as e:
+            last_err = e
+
+    # If all parsers fail, provide more context in the error
+    error_msg = f"Failed to parse JSON/YAML. Last error: {str(last_err)}\n"
+    error_msg += f"First 500 chars of input: {s[:500]}"
+    raise ValueError(error_msg) from last_err
+
+def _split_top_level_args(s: str) -> List[str]:
+    """
+    Split ' {...}, {...} ' at top-level commas.
+    """
+    parts = []
+    depth = 0
+    start = 0
+    in_str = False
+    str_char = None
+    escape = False
+
+    def push(end: int):
+        part = s[start:end].strip()
+        if part:
+            parts.append(part)
+
+    for i, ch in enumerate(s):
+        if in_str:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == str_char:
+                in_str = False
+        else:
+            if ch in ('"', "'"):
+                in_str = True
+                str_char = ch
+            elif ch in "{[(":
+                depth += 1
+            elif ch in "}])":
+                depth -= 1
+            elif ch == "," and depth == 0:
+                push(i)
+                start = i + 1
+
+    push(len(s))
+    return parts
+
+def _parse_payload(op: str, inside: str) -> MongoPayload:
+    """
+    Build native Python structures from the call's inside string.
+    Accepts Mongo shell style & Extended JSON via tolerant loaders.
+    """
+    try:
+        s = _replace_js_constructors(inside)
+        # Remove comments (both // and /* */ style)
+        s = re.sub(r"/\*.*?\*/", "", s, flags=re.DOTALL)
+        s = re.sub(r"//.*?$", "", s, flags=re.MULTILINE).strip()
+
+        if op == "aggregate":
+            if not s.lstrip().startswith("["):
+                raise ValueError("aggregate(...) must receive an array/pipeline like: [ { $match: ... }, ... ]")
+            return _loads_tolerant(s)
+
+        if op == "find":
+            args = _split_top_level_args(s)
+            if not args:
+                raise ValueError("find(...) missing arguments.")
+            if len(args) == 1:
+                return _loads_tolerant(args[0])
+            return {
+                "filter": _loads_tolerant(args[0]),
+                "projection": _loads_tolerant(args[1]),
+            }
+
+        raise ValueError(f"Unsupported operation: {op}")
+    except Exception as e:
+        # Provide more context about what we're trying to parse
+        error_msg = f"Error parsing {op} payload: {str(e)}\n"
+        error_msg += f"Input (first 500 chars): {inside[:500]}"
+        raise ValueError(error_msg) from e
+
+# ---------------------------
+# Extended JSON → native & path fixes
+# ---------------------------
+
+def _convert_extended_json(value: Any) -> Any:
+    """
+    Convert Extended JSON literals to native Python/BSON:
+      {"$date": "..."}        -> datetime
+      {"$oid": "..."}         -> ObjectId
+      {"$numberLong": "..."}  -> int
+    Recurse into lists/dicts.
+    """
+    if isinstance(value, list):
+        return [_convert_extended_json(v) for v in value]
+
+    if isinstance(value, dict):
+        keys = set(value.keys())
+        if keys == {"$date"}:
+            v = value["$date"]
+            if isinstance(v, (int, float)):
+                return datetime.fromtimestamp(v / 1000.0, tz=timezone.utc)
+            return dtparser.isoparse(v)
+        if keys == {"$oid"}:
+            return ObjectId(value["$oid"])
+        if keys == {"$numberLong"}:
+            return int(value["$numberLong"])
+        return {k: _convert_extended_json(v) for k, v in value.items()}
+
+    return value
+
+def _fix_field_path(key: str) -> str:
+    """
+    Remove Extended JSON artifacts like '.$date' from field names.
+    Keep operator keys (start with '$') as-is.
+    """
+    if key.startswith("$"):
+        return key
+    if key.endswith(".$date"):
+        return key[: -len(".$date")]
+    return key
+
+def _rewrite_keys(obj: Any) -> Any:
+    """
+    Recursively:
+      - Convert Extended JSON values (dates/oids/longs)
+      - Fix field path keys that accidentally include '.$date'
+    Leaves operator keys untouched.
+    """
+    if isinstance(obj, list):
+        return [_rewrite_keys(x) for x in obj]
+
+    if isinstance(obj, dict):
+        new = {}
+        for k, v in obj.items():
+            v_conv = _convert_extended_json(v)
+            v_conv = _rewrite_keys(v_conv)
+            new_k = k if k.startswith("$") else _fix_field_path(k)
+            new[new_k] = v_conv
+        return new
+
+    return obj
+
+# ---------------------------
+# Runner
+# ---------------------------
+
+class LlmMongoRunner:
+    def __init__(self):
+        load_dotenv()
+        mongo_uri = os.getenv("MONGO_URI")
+        mongo_db = os.getenv("MONGO_DB")
+        if not mongo_uri or not mongo_db:
+            raise RuntimeError("MONGO_URI and MONGO_DB must be set in .env")
+        self.client = MongoClient(mongo_uri)
+        self.db = self.client[mongo_db]
+
+    def run(self, raw_response: str, limit: int = 50) -> List[Dict[str, Any]]:
+        """
+        Parses and executes an LLM-produced Mongo command string.
+        Supports db.<Collection>.aggregate([...]) and .find({...}).
+        """
+        try:
+            cleaned = _clean_raw_response(raw_response)
+            coll, op, inside = _extract_collection_and_op(cleaned)
+            payload = _parse_payload(op, inside)
+            payload = _rewrite_keys(payload)  # normalize field paths & convert Extended JSON
+
+            collection = self.db[coll]
+
+            if op == "aggregate":
+                if not isinstance(payload, list):
+                    raise ValueError("aggregate payload must be a list of stages.")
+                cursor = collection.aggregate(payload, allowDiskUse=True)
+                return list(_take(cursor, limit))
+
+            if op == "find":
+                if isinstance(payload, dict) and "filter" in payload:
+                    cursor = collection.find(payload["filter"], payload.get("projection"))
+                else:
+                    cursor = collection.find(payload)
+                return list(_take(cursor, limit))
+
+            raise ValueError(f"Unsupported operation: {op}")
+        except Exception as e:
+            # Provide more context in error message
+            error_msg = f"Error executing MongoDB query: {str(e)}\n"
+            error_msg += f"Raw response (first 500 chars): {raw_response[:500]}"
+            raise RuntimeError(error_msg) from e
+
+def _take(it: Iterable[Dict[str, Any]], n: int) -> Iterable[Dict[str, Any]]:
+    count = 0
+    for doc in it:
+        yield doc
+        count += 1
+        if count >= n:
+            break
+
+# ---------------------------
+# Example usage
+# ---------------------------
+if __name__ == "__main__":
+    # query to get the trips for a specific asset
+    raw = "db.Trips.aggregate([\n  {\n    $lookup: {\n      from: \"Asset\",\n      localField: \"driver_info.asset_id\",\n      foreignField: \"asset_id\",\n      as: \"asset\"\n    }\n  },\n  {\n    $unwind: \"$asset\"\n  },\n  {\n    $match: {\n      \"asset.plate_number\": \"3688 FHD\"\n    }\n  },\n  {\n    $addFields: {\n      created_at: {\n        $dateToString: {\n          format: \"%Y-%m-%dT%H:%M:%S\",\n          date: \"$created_at\"\n        }\n      }\n    }\n  },\n  {\n    $match: {\n      created_at: {\n        $gte: ISODate(\"2025-10-20T00:00:00.000Z\"),\n        $lte: ISODate(\"2025-11-20T00:05:00.000Z\")\n      }\n    }\n  },\n  {\n    $sort: {\n      created_at: -1\n    }\n  },\n  {\n    $limit: 1\n  },\n  {\n    $project: {\n      _id: 0,\n      created_at: 1,\n      imei: 1,\n      device_id: 1,\n      start_at: 1,\n      end_at: 1,\n      duration: 1,\n      start_location: 1,\n      start_odometer: 1,\n      start_fuel_level: 1,\n      end_location: 1,\n      end_odometer: 1,\n      end_fuel_level: 1,\n      distance_covered: 1,\n      distance_covered_orthodromic: 1,\n      avg_speed: 1,\n      max_speed: 1,\n      idle_time: 1,\n      driver_info: 1,\n      harsh_braking_occurrence: 1,\n      harsh_acceleration_occurrence: 1,\n      harsh_cornering_occurrence: 1,\n      over_speeding_occurrence: 1,\n      idling_occurrence: 1,\n      zigzagging_occurrence: 1,\n      crashing_count: 1,\n      sudden_stop_count: 1,\n      sharp_turn_count: 1,\n      frequent_start_stop_count: 1,\n      fuel_consumed_ltrs: 1,\n      fuel_refill_count: 1,\n      behaviour_score: 1,\n      safety_score: 1,\n      packet_info: 1\n    }\n  }\n])"
+
+    runner = LlmMongoRunner()
+    results = runner.run(raw, limit=10)
+    for doc in results:
+        print(doc)

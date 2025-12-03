@@ -1,0 +1,16 @@
+{
+    "condition": {
+      "condition_category": "ValueBased",
+      "event_based_conditions": [],
+      "value_based_conditions": [
+        {
+          "parameter": "speed",
+          "operator": "LessThan",
+          "value": 20,
+          "time_window": "0",
+          "unit": "Seconds"
+        }
+      ],
+      "logic_based_conditions": []
+    }
+  }

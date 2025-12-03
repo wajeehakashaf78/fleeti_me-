@@ -1,0 +1,13 @@
+{
+    "analytics": {
+      "total_miles_driven": 0,
+      "total_hours_worked": 0,
+      "average_speed_compliance": 0,
+      "fuel_consumption_efficiency": 0,
+      "maintenance_requests_submitted": 0,
+      "customer_complaints_received": 0,
+      "customer_compliments_received": 0,
+      "training_hours_completed": 0,
+      "incident_reports_submitted": 0
+    }
+  }

@@ -1,0 +1,20 @@
+{
+    "details": {
+      "cost_finance": {
+        "vehicle_purchase_price": null,
+        "vehicle_purchase_date": null,
+        "lease_terms_provider": null,
+        "monthly_lease_amount": null,
+        "depreciate_value": null,
+        "fuel_card_assigned": false,
+        "fuel_card_number": "",
+        "fuel_cost_per_month": null,
+        "insurance_policy_number": "",
+        "insurance_provider": "",
+        "insurance_expiry": null,
+        "warranty_date": null,
+        "tolls": null,
+        "nfc_tag": ""
+      }
+    }
+  }

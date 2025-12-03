@@ -1,0 +1,19 @@
+{
+    "_id": "ec35afee-a3f4-457f-be31-cc8941eda4ce",
+    "name": "KSA",
+    "description": "",
+    "type": "Circle",
+    "status": "Active",
+    "coordinates": [
+      [
+        23.35442253458027,
+        45.542135864925385
+      ]
+    ],
+    "radius": 66367.52390567889,
+    "event": 0,
+    "sub_tenant_id": "sub-tenant-C7IWHP",
+    "created_at": {
+      "$date": "2025-10-10T10:49:46.781Z"
+    }
+  }

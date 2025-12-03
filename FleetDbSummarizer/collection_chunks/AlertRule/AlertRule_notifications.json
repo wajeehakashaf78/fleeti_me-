@@ -1,0 +1,11 @@
+{
+    "notifications": [
+      {
+        "notification_actions": "Email",
+        "recepients": [
+          "hammad@123.com"
+        ],
+        "message_template": "speed less then"
+      }
+    ]
+  }

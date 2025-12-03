@@ -1,0 +1,15 @@
+{
+  "details": {
+    "vehicle_capacity_specialization": {
+      "fleet_capacity_tons": null,
+      "pallet_capacity": null,
+      "body_manufacturer": null,
+      "outer_dimensions": "",
+      "inner_dimensions": "",
+      "number_of_axles": null,
+      "axle_load": null,
+      "number_of_doors": null,
+      "tail_lift_presence": false
+    }
+  }
+}

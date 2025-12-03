@@ -1,0 +1,28 @@
+{
+    "asset_assignments": [
+      {
+        "_id": "ccb834ac-8883-4798-a656-a6a406a3295d",
+        "asset_name": "s",
+        "asset_type": "Fleet",
+        "asset_category": "",
+        "priority_type": 0,
+        "assignment_type": 0,
+        "start_date": {
+          "$date": "2025-10-22T00:00:00.000Z"
+        },
+        "end_date": {
+          "$date": "2025-10-29T23:59:59.999Z"
+        },
+        "status": 0,
+        "assigned_by": "DevTest111",
+        "notes": "",
+        "responsibilities": [],
+        "access_level": null,
+        "send_notifications": false,
+        "schedule": false,
+        "created_at": {
+          "$date": "2025-10-22T14:26:20.850Z"
+        }
+      }
+    ]
+  }

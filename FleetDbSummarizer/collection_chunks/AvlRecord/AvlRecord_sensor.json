@@ -1,0 +1,20 @@
+{
+    "sensors": {
+    "total_odometer": 3414716,
+    "speed": 66,
+    "battery_level": 0,
+    "engine_rpm": 0,
+    "engine_temperature": 0,
+    "gsm_signal": 5,
+    "gnss_status": 0,
+    "power_status": 0,
+    "external_voltage": 192,
+    "direction_angle": 41,
+    "engine_percent_load": 0,
+    "fuel_level_litters": 0,
+    "crash_detection": 0,
+    "weight_value": 23274543544.666668,
+    "temperature_value_s": "3414716 discarded",
+    "humidity_value": 0
+  }
+}
