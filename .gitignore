@@ -1,6 +1,6 @@
 # Python
 # Virtual environments
-venv/
+venv310/
 env/
 ENV/
 .venv
@@ -10,7 +10,7 @@ RasaFleeti/venv3.10/
 RasaFleeti/.rasa/
 RasaFleeti/models/
 
-
+main.py
 # Python cache
 __pycache__/
 *.py[cod]

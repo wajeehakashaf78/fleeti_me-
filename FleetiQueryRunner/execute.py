@@ -268,6 +268,69 @@ def _rewrite_keys(obj: Any) -> Any:
 
     return obj
 
+def _replace_date_strings_with_isodate(query_str: str) -> str:
+    """
+    Replace date strings in the query with ISODate() function calls.
+    Handles formats like:
+    - "2025-09-01T00:00:00Z"
+    - "2025-11-01 00:00:00+00:00"
+    - "2025-11-01T00:00:00.000Z"
+    - "2025-11-10T23:59:59Z"
+    
+    IMPORTANT: Only replaces standalone date strings, NOT dates already inside ISODate() calls
+    or Extended JSON format {"$date": "..."}.
+    """
+    # First, protect existing ISODate() calls and Extended JSON by temporarily replacing them
+    # This prevents our regex from matching dates inside them
+    
+    # Store protected sections
+    protected_sections = []
+    protected_counter = 0
+    
+    # Protect ISODate() calls
+    def protect_isodate(match):
+        nonlocal protected_counter
+        placeholder = f"__PROTECTED_ISODATE_{protected_counter}__"
+        protected_sections.append((placeholder, match.group(0)))
+        protected_counter += 1
+        return placeholder
+    
+    # Protect Extended JSON date format
+    def protect_extended_json_date(match):
+        nonlocal protected_counter
+        placeholder = f"__PROTECTED_EXTJSON_{protected_counter}__"
+        protected_sections.append((placeholder, match.group(0)))
+        protected_counter += 1
+        return placeholder
+    
+    # Step 1: Protect existing ISODate() calls
+    protected_str = re.sub(r'ISODate\s*\(\s*"([^"]+)"\s*\)', protect_isodate, query_str)
+    
+    # Step 2: Protect Extended JSON date format
+    protected_str = re.sub(r'\{\s*"\$date"\s*:\s*"([^"]+)"\s*\}', protect_extended_json_date, protected_str)
+    
+    # Step 3: Now replace standalone date strings
+    # Pattern to match ISO date strings in quotes (both double and single quotes)
+    iso_date_pattern = r'(["\'])(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2}|[+-]\d{4})?)\1'
+    
+    def replace_date(match):
+        quote_char = match.group(1)
+        date_str = match.group(2)
+        # Normalize: if date has space separator, convert to T separator for ISODate
+        # Keep timezone as-is (Z, +00:00, -05:00, etc.)
+        normalized_date = date_str.replace(' ', 'T')
+        # Return ISODate() with the normalized date string (always use double quotes)
+        return f'ISODate("{normalized_date}")'
+    
+    # Replace all date strings with ISODate()
+    result = re.sub(iso_date_pattern, replace_date, protected_str)
+    
+    # Step 4: Restore protected sections
+    for placeholder, original in protected_sections:
+        result = result.replace(placeholder, original)
+    
+    return result
+
 # ---------------------------
 # Runner
 # ---------------------------
@@ -289,9 +352,28 @@ class LlmMongoRunner:
         """
         try:
             cleaned = _clean_raw_response(raw_response)
+            # Replace date strings with ISODate() before parsing
+            cleaned = _replace_date_strings_with_isodate(cleaned)
             coll, op, inside = _extract_collection_and_op(cleaned)
             payload = _parse_payload(op, inside)
             payload = _rewrite_keys(payload)  # normalize field paths & convert Extended JSON
+
+            # Print the final query before execution
+            print("\n" + "=" * 60)
+            print(f"📋 Executing MongoDB Query:")
+            print(f"Collection: {coll}")
+            print(f"Operation: {op}")
+            if op == "aggregate":
+                print(f"Pipeline: {json.dumps(payload, indent=2, default=str)}")
+            elif op == "find":
+                if isinstance(payload, dict) and "filter" in payload:
+                    print(f"Filter: {json.dumps(payload.get('filter', {}), indent=2, default=str)}")
+                    if payload.get("projection"):
+                        print(f"Projection: {json.dumps(payload.get('projection', {}), indent=2, default=str)}")
+                else:
+                    print(f"Filter: {json.dumps(payload, indent=2, default=str)}")
+            print(f"Limit: {limit}")
+            print("=" * 60 + "\n")
 
             collection = self.db[coll]
 

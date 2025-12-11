@@ -1,6 +1,28 @@
 version: "3.1"
 
 stories:
+- story: greet then ask report
+  steps:
+  - intent: greet
+  - action: utter_greet
+  - intent: request_trips_report
+  - action: report_form
+  - active_loop: report_form
+  - active_loop: null
+  - action: action_run_report
+
+- story: request report list
+  steps:
+  - intent: request_report_list
+  - action: utter_list_reports
+
+- story: greet then request report list
+  steps:
+  - intent: greet
+  - action: utter_greet
+  - intent: request_report_list
+  - action: utter_list_reports
+
 - story: provide details during form
   steps:
   - intent: request_trips_report
@@ -40,7 +62,7 @@ stories:
   steps:
   - intent: request_trips_report
     entities:
-      - report_type: trips time report
+      - report_type: trips report
       - asset: ABC-123
       - date: 2024-03-01
       - date: 2024-03-07
@@ -79,11 +101,30 @@ stories:
   - active_loop: null
   - action: action_run_report
 
+- story: trips report asset and date together when asked for asset
+  steps:
+  - intent: request_trips_report
+  - action: report_form
+  - active_loop: report_form
+  - slot_was_set:
+    - report_type: trips report
+  - intent: provide_report_detail
+    entities:
+      - asset: 3688 FHD
+      - date: 2024-05-01
+      - date: 2024-05-31
+  - action: report_form
+  - slot_was_set:
+    - assets: "3688 FHD"
+    - date_range: "2024-05-01 to 2024-05-31"
+  - active_loop: null
+  - action: action_run_report
+
 # fleet performance summary report stories
 
 - story: fleet performance summary report request
   steps:
-  - intent: request_fleet_performance_report
+  - intent: request_fleet_performance_summary_report
   - action: report_form
   - active_loop: report_form
   - active_loop: null
@@ -91,7 +132,7 @@ stories:
 
 - story: fleet performance report request
   steps:
-  - intent: request_fleet_performance_report
+  - intent: request_fleet_performance_summary_report
   - action: report_form
   - active_loop: report_form
   - active_loop: null
@@ -99,7 +140,7 @@ stories:
 
 - story: fleet performance report with date range
   steps:
-  - intent: request_fleet_performance_report
+  - intent: request_fleet_performance_summary_report
     entities:
       - date: 2024-05-01
       - date: 2024-05-31
@@ -110,7 +151,7 @@ stories:
 
 - story: fleet performance report all details in one message
   steps:
-  - intent: request_fleet_performance_report
+  - intent: request_fleet_performance_summary_report
     entities:
       - report_type: fleet performance report
       - date: 2024-05-01
@@ -122,7 +163,7 @@ stories:
 
 - story: fleet performance report vague then clarify
   steps:
-  - intent: request_fleet_performance_report
+  - intent: request_fleet_performance_summary_report
   - action: report_form
   - active_loop: report_form
   - intent: provide_report_detail
@@ -217,6 +258,25 @@ stories:
   - active_loop: null
   - action: action_run_report
 
+- story: fuel consumption report asset and date together when asked for asset
+  steps:
+  - intent: request_fuel_consumption_report
+  - action: report_form
+  - active_loop: report_form
+  - slot_was_set:
+    - report_type: fuel trip consumption report
+  - intent: provide_report_detail
+    entities:
+      - asset: 5151 URA
+      - date: 2024-06-01
+      - date: 2024-06-30
+  - action: report_form
+  - slot_was_set:
+    - assets: "5151 URA"
+    - date_range: "2024-06-01 to 2024-06-30"
+  - active_loop: null
+  - action: action_run_report
+
 # odometer report stories
 
 - story: odometer report request
@@ -282,11 +342,30 @@ stories:
   - active_loop: null
   - action: action_run_report
 
+- story: odometer report asset and date together when asked for asset
+  steps:
+  - intent: request_odometer_report
+  - action: report_form
+  - active_loop: report_form
+  - slot_was_set:
+    - report_type: odometer report
+  - intent: provide_report_detail
+    entities:
+      - asset: ABC-123
+      - date: 2024-07-01
+      - date: 2024-07-15
+  - action: report_form
+  - slot_was_set:
+    - assets: "ABC-123"
+    - date_range: "2024-07-01 to 2024-07-15"
+  - active_loop: null
+  - action: action_run_report
+
 # idle time report stories
 
 - story: idle time report request
   steps:
-  - intent: request_idle_report
+  - intent: request_idle_time_report
   - action: report_form
   - active_loop: report_form
   - active_loop: null
@@ -294,7 +373,7 @@ stories:
 
 - story: idle report with plate provided
   steps:
-  - intent: request_idle_report
+  - intent: request_idle_time_report
     entities:
       - asset: 5151 URA
   - action: report_form
@@ -306,7 +385,7 @@ stories:
 
 - story: idle report all details in one message
   steps:
-  - intent: request_idle_report
+  - intent: request_idle_time_report
     entities:
       - report_type: idle time report
       - asset: ABC-123
@@ -319,7 +398,7 @@ stories:
 
 - story: idle report asset first then rest
   steps:
-  - intent: request_idle_report
+  - intent: request_idle_time_report
     entities:
       - asset: ABC-123
   - action: report_form
@@ -335,7 +414,7 @@ stories:
 
 - story: idle report vague then clarify
   steps:
-  - intent: request_idle_report
+  - intent: request_idle_time_report
   - action: report_form
   - active_loop: report_form
   - intent: provide_report_detail
@@ -347,12 +426,31 @@ stories:
   - active_loop: null
   - action: action_run_report
 
+- story: idle report asset and date together when asked for asset
+  steps:
+  - intent: request_idle_time_report
+  - action: report_form
+  - active_loop: report_form
+  - slot_was_set:
+    - report_type: idle time report
+  - intent: provide_report_detail
+    entities:
+      - asset: KSA-1234
+      - date: 2024-08-01
+      - date: 2024-08-31
+  - action: report_form
+  - slot_was_set:
+    - assets: "KSA-1234"
+    - date_range: "2024-08-01 to 2024-08-31"
+  - active_loop: null
+  - action: action_run_report
+
 
 # stop time report stories
 
 - story: stop time report request
   steps:
-  - intent: request_stop_report
+  - intent: request_stop_time_report
   - action: report_form
   - active_loop: report_form
   - active_loop: null
@@ -360,7 +458,7 @@ stories:
 
 - story: stop time report with plate provided
   steps:
-  - intent: request_stop_report
+  - intent: request_stop_time_report
     entities:
       - asset: 5151 URA
   - action: report_form
@@ -372,7 +470,7 @@ stories:
 
 - story: stop time report all details in one message
   steps:
-  - intent: request_stop_report
+  - intent: request_stop_time_report
     entities:
       - report_type: stop time report
       - asset: ABC-123
@@ -385,7 +483,7 @@ stories:
 
 - story: stop time report asset first then rest
   steps:
-  - intent: request_stop_report
+  - intent: request_stop_time_report
     entities:
       - asset: ABC-123
   - action: report_form
@@ -401,7 +499,7 @@ stories:
 
 - story: stop time report vague then clarify
   steps:
-  - intent: request_stop_report
+  - intent: request_stop_time_report
   - action: report_form
   - active_loop: report_form
   - intent: provide_report_detail
@@ -410,6 +508,25 @@ stories:
       - date: 2024-04-01
       - date: 2024-04-10
   - action: report_form
+  - active_loop: null
+  - action: action_run_report
+
+- story: stop time report asset and date together when asked for asset
+  steps:
+  - intent: request_stop_time_report
+  - action: report_form
+  - active_loop: report_form
+  - slot_was_set:
+    - report_type: stop time report
+  - intent: provide_report_detail
+    entities:
+      - asset: TRK-908
+      - date: 2024-09-01
+      - date: 2024-09-30
+  - action: report_form
+  - slot_was_set:
+    - assets: "TRK-908"
+    - date_range: "2024-09-01 to 2024-09-30"
   - active_loop: null
   - action: action_run_report
 
@@ -524,6 +641,25 @@ stories:
   - active_loop: null
   - action: action_run_report
 
+- story: raw data report asset and date together when asked for asset
+  steps:
+  - intent: request_raw_data_report
+  - action: report_form
+  - active_loop: report_form
+  - slot_was_set:
+    - report_type: raw data report
+  - intent: provide_report_detail
+    entities:
+      - asset: 3688 FHD
+      - date: 2024-10-01
+      - date: 2024-10-31
+  - action: report_form
+  - slot_was_set:
+    - assets: "3688 FHD"
+    - date_range: "2024-10-01 to 2024-10-31"
+  - active_loop: null
+  - action: action_run_report
+
 # over speeding report stories
 
 - story: over speeding report request
@@ -586,6 +722,25 @@ stories:
       - date: 2024-04-01
       - date: 2024-04-10
   - action: report_form
+  - active_loop: null
+  - action: action_run_report
+
+- story: over speeding report asset and date together when asked for asset
+  steps:
+  - intent: request_over_speeding_report
+  - action: report_form
+  - active_loop: report_form
+  - slot_was_set:
+    - report_type: over speeding report
+  - intent: provide_report_detail
+    entities:
+      - asset: KSA-8821
+      - date: 2024-11-01
+      - date: 2024-11-30
+  - action: report_form
+  - slot_was_set:
+    - assets: "KSA-8821"
+    - date_range: "2024-11-01 to 2024-11-30"
   - active_loop: null
   - action: action_run_report
 
@@ -654,6 +809,25 @@ stories:
   - active_loop: null
   - action: action_run_report
 
+- story: track data report asset and date together when asked for asset
+  steps:
+  - intent: request_track_data_report
+  - action: report_form
+  - active_loop: report_form
+  - slot_was_set:
+    - report_type: track data report
+  - intent: provide_report_detail
+    entities:
+      - asset: AAA-119
+      - date: 2024-12-01
+      - date: 2024-12-31
+  - action: report_form
+  - slot_was_set:
+    - assets: "AAA-119"
+    - date_range: "2024-12-01 to 2024-12-31"
+  - active_loop: null
+  - action: action_run_report
+
 # temperature & humidity report stories
 
 - story: temperature & humidity report request
@@ -680,7 +854,7 @@ stories:
   steps:
   - intent: request_temperature_humidity_report
     entities:
-      - report_type: temperature & humidity report
+      - report_type: temperature humidity report
       - asset: KSA-8821
       - date: 2024-05-01
       - date: 2024-05-31
@@ -698,7 +872,7 @@ stories:
   - active_loop: report_form
   - intent: provide_report_detail
     entities:
-      - report_type: temperature & humidity report
+      - report_type: temperature humidity report
       - date: 2024-06-01
       - date: 2024-06-15
   - action: report_form
@@ -716,6 +890,25 @@ stories:
       - date: 2024-04-01
       - date: 2024-04-10
   - action: report_form
+  - active_loop: null
+  - action: action_run_report
+
+- story: temperature & humidity report asset and date together when asked for asset
+  steps:
+  - intent: request_temperature_humidity_report
+  - action: report_form
+  - active_loop: report_form
+  - slot_was_set:
+    - report_type: temperature humidity report
+  - intent: provide_report_detail
+    entities:
+      - asset: 3688 FHD
+      - date: 2025-01-01
+      - date: 2025-01-31
+  - action: report_form
+  - slot_was_set:
+    - assets: "3688 FHD"
+    - date_range: "2025-01-01 to 2025-01-31"
   - active_loop: null
   - action: action_run_report
 
@@ -784,6 +977,25 @@ stories:
   - active_loop: null
   - action: action_run_report
 
+- story: weight sensor report asset and date together when asked for asset
+  steps:
+  - intent: request_weight_sensor_report
+  - action: report_form
+  - active_loop: report_form
+  - slot_was_set:
+    - report_type: weight sensor report
+  - intent: provide_report_detail
+    entities:
+      - asset: KSA-8821
+      - date: 2025-02-01
+      - date: 2025-02-28
+  - action: report_form
+  - slot_was_set:
+    - assets: "KSA-8821"
+    - date_range: "2025-02-01 to 2025-02-28"
+  - active_loop: null
+  - action: action_run_report
+
 # commands history report stories
 
 - story: commands history report request
@@ -849,6 +1061,25 @@ stories:
   - active_loop: null
   - action: action_run_report
 
+- story: commands history report asset and date together when asked for asset
+  steps:
+  - intent: request_commands_history_report
+  - action: report_form
+  - active_loop: report_form
+  - slot_was_set:
+    - report_type: commands history report
+  - intent: provide_report_detail
+    entities:
+      - asset: AAA-119
+      - date: 2025-03-01
+      - date: 2025-03-31
+  - action: report_form
+  - slot_was_set:
+    - assets: "AAA-119"
+    - date_range: "2025-03-01 to 2025-03-31"
+  - active_loop: null
+  - action: action_run_report
+
 # events report stories
 
 - story: events report request
@@ -911,6 +1142,25 @@ stories:
       - date: 2024-04-01
       - date: 2024-04-10
   - action: report_form
+  - active_loop: null
+  - action: action_run_report
+
+- story: events report asset and date together when asked for asset
+  steps:
+  - intent: request_events_report
+  - action: report_form
+  - active_loop: report_form
+  - slot_was_set:
+    - report_type: events report
+  - intent: provide_report_detail
+    entities:
+      - asset: 3688 FHD
+      - date: 2025-04-01
+      - date: 2025-04-30
+  - action: report_form
+  - slot_was_set:
+    - assets: "3688 FHD"
+    - date_range: "2025-04-01 to 2025-04-30"
   - active_loop: null
   - action: action_run_report
 

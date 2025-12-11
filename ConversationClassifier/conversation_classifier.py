@@ -93,7 +93,7 @@ Your tasks:
      * If the message refers to a previously mentioned vehicle with words like "it", "its", "that one", "this", or "they", replace the reference with the most recent explicit vehicle identifier/name from the history (e.g., plate "123 ABC" or vehicle name)
      * If there is no clear, unambiguous reference in history, do NOT guess; keep the pronoun as-is
    - ONLY fill in missing context when:
-     * The message is clearly incomplete (e.g., "what about 345 DEF" after asking about vehicle location)
+     * The message is clearly incomplete (e.g., "what about 345 DEF" after asking about vehicle location, etc.)
      * The missing context is explicitly available in the conversation history
      * You can complete the thought without inventing new information
    - If no refinement is necessary (no typos to correct, no pronouns to resolve, no context to add), return the refined message IDENTICAL to the user's message, character-for-character (do not change casing, punctuation, or spacing)
@@ -108,11 +108,11 @@ CRITICAL RULES:
 - Preserve the user's intent; do not rewrite into an answer
 - Correct spelling errors; make only minimal grammar fixes needed for clarity
 - Resolve pronouns to the most recent unambiguous referenced vehicle from history; otherwise leave them unchanged
-- Only fill missing context when it's clearly incomplete AND context exists in history
+- Only fill missing context when it's clearly incomplete AND context exists in history.
 - Do not make up information not in the conversation history or user's message
 
 Strict output format (exactly three lines, no extra text, no notes, no explanations):
-refined message: [final refined message]
+refined message: [final context completed refined message]
 classification: [general conversation or fleet]
 response: [response text or N/A]"""
         

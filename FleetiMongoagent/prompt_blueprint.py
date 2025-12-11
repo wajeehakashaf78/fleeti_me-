@@ -10,12 +10,12 @@ CRITICAL: Return ONLY the aggregation query. No explanations, no comments, no ma
 
 // already in the test collections code (summarizer)
 
-=== IDENTIFIER RESOLUTION RULES (Generic Rules) ===
+=== IDENTIFIER RESOLUTION RULES (Examplary Rules) ===
 
 - Vehicle Plate Number → Use Asset.details.plate_number (NOT asset_id, NOT _id)
 - Geofence Name → Use Geofence.name
 - Alert Rule Name → Use AlertRule.name
-- System Alert Event Type → Use Events.event_type (values like Idling, Harsh Acceleration, Over Speeding, etc.)
+- System Alert Event Type → Use Events.event_type (values like 'idling', 'harsh_acceleration', 'over_speeding', etc.)
 - Date/Day for Daily Analytics → Use DailyAnalytics.timesptamp
 - Driver Name -> Use Driver.profile.first_name + Driver.profile.last_name
 - Date/Day for Trip -> Use Trip.start_at and Trip.end_at
@@ -27,6 +27,10 @@ STARTING COLLECTION SELECTION:
 - If query wants the following events/alerts: Idling, Driving Without GPS Lock, Harsh Acceleration, Harsh Braking, Harsh Cornering, Sharp Turn, Sudden Stop, Over Speeding, Zigzag Driving, Frequent Start/Stop, Long Continuous Driving, Driving Without GPS Lock, driving with low battery → Use Events collection
 - If any other alert, use AlertHistory collection
 - If query wants logs of Geofence alerts, use AlertHistory collection
+- ALERT TYPE DISTINCTION IN AlertHistory:
+  - Geofence alerts have alert_info.alert_type = "geofence"
+  - All other alerts (from AlertRule) have alert_info.alert_type = "alertRule"
+  - Use this field to distinguish between geofence alerts and regular alert rule alerts if needed.
 - Daily Analytics documents are stored for each day for each asset and each driver.
 - Trip documents are stored for each trip for each asset and each driver.
 
@@ -37,12 +41,27 @@ SUB-TENANT FILTER RULE:
 - This match must be combined with the other filters.
 - Example: {"$match": {"sub_tenant_id": "sub_tenant_id","details.plate_number": {"$regex": "^ABC 123$", "$options": "i"}}}
 
+SUB-TENANT FILTERING FOR COLLECTIONS WITHOUT sub_tenant_id:
+- Some collections (like AlertHistory) do NOT have "sub_tenant_id" field directly.
+- When querying collections without sub_tenant_id, you MUST use foreign keys to link to collections that have sub_tenant_id to filter data by sub_tenant.
+- For AlertHistory: If retrieving alerts, use AlertHistory.alert_info.alert_rule_id to lookup AlertRule collection and filter by sub_tenant_id = "sub_tenant_id".
+  - This ensures that alerts from other sub-tenants are not shown to users.
+- For any collection without sub_tenant_id, see if it can link to any of the above mentioned collections that have sub_tenant_id field and use $lookup to apply sub-tenant filtering.
+
 PLATE NUMBER QUERIES:
 - ALWAYS match on Asset.details.plate_number (NOT asset_id, NOT _id)
 - Plate numbers can be numeric (e.g., "243") or alphanumeric (e.g., "123 ABC", "ABC-123")
 - Use case-insensitive regex for exact match: {"$regex": "^PLATE_NUMBER$", "$options": "i"}
 - Example for plate "243": {"$match": {"sub_tenant_id": "sub_tenant_id", "details.plate_number": {"$regex": "^243$", "$options": "i"}}}
 - Example for plate "123 ABC": {"$match": {"sub_tenant_id": "sub_tenant_id", "details.plate_number": {"$regex": "^123 ABC$", "$options": "i"}}}
+
+EVENT/ALERT NAME MATCHING RULES:
+- When matching event types in Events collection, use flexible regex to handle variations in naming:
+  {"$regex": "event[-_\\s]*name|eventname", "$options": "i"}
+- When matching alert names/identifiers in AlertHistory collection, use exact match regex (same as plate numbers):
+  {"$regex": "^identifier$", "$options": "i"}
+- Example for Events: {"$match": {"sub_tenant_id": "sub_tenant_id", "event_type": {"$regex": "event[-_\\\\s]*name|eventname", "$options": "i"}}}
+- Example for AlertHistory: {"$match": {"alert_info.name": {"$regex": "^Speed Violation$", "$options": "i"}}}
 
 TIME-BASED QUERIES:
 - If user asks for "latest/last/recent/current" or intends to get the latest data → Use $sort by timestamp field descending, then $limit 1
@@ -57,8 +76,9 @@ TIME-BASED QUERIES:
 { "$sort": { "timeDiff": 1 } },
 { "$limit": 1 }
 
-- NEVER convert BSON Date to string before filtering or sorting
-- Use ISODate() format for date comparisons: ISODate("2025-10-22T04:37:54.000Z")
+CRITICAL DATE FORMAT RULES:
+- **ALWAYS use ISODate() function for ALL date comparisons in $match stages**
+- **CORRECT format:** ISODate("2025-11-01T00:00:00Z") or ISODate("2025-11-01T00:00:00.000Z")
 
 JOINING COLLECTIONS - CRITICAL RULES:
 
@@ -113,8 +133,9 @@ PROJECTION RULES:
 DATE FIELD HANDLING:
 - All date fields are BSON Date types (created_at, start_at, end_at, timestamp)
 - NEVER use paths like "created_at.$date" - use "created_at" directly
-- For filtering: Compare directly to ISODate() or {"$date": "..."}
-- For formatting: Use $dateToString in $project if string format needed
+- **MANDATORY:** For ALL date filtering in $match stages, you MUST use ISODate() function
+- **CORRECT:** {"timestamp": {"$gte": ISODate("2025-11-01T00:00:00Z"), "$lte": ISODate("2025-11-10T23:59:59Z")}}
+- For formatting output: Use $dateToString in $project if string format needed for display
 
 QUERY SIMPLICITY CHECKLIST (before generating):
 - ✅ Check if all needed fields are in the starting collection
@@ -214,6 +235,32 @@ db.Asset.aggregate([
 {"$unwind": "$daily"},
 {"$match": {"daily.timestamp": {"$gte": ISODate("2025-02-01T00:00:00Z"),"$lte": ISODate("2025-02-01T23:59:59Z")}}},
 {"$project": {"_id": 0,"plate_number": "$details.plate_number","date": "$daily.timestamp","distance": "$daily.distance_m"}}
+])
+
+Example 10: "Show me all harsh braking events"
+Answer:
+db.Events.aggregate([
+{"$match": {"sub_tenant_id": "sub_tenant_id", "event_type": {"$regex": "harsh[-_\\\\s]*braking|harshbraking", "$options": "i"}}},
+{"$project": {"_id": 0,"event_type": "$event_type","timestamp": "$timestamp","location": "$location","speed": "$speed","duration": "$duration"}}
+])
+
+Example 11: "Get me all alerts from 2025-10-01 to 2025-10-31"
+Answer:
+db.AlertHistory.aggregate([
+{"$lookup": {"from": "AlertRule","localField": "alert_info.alert_rule_id","foreignField": "_id","as": "alert_rule"}},
+{"$unwind": "$alert_rule"},
+{"$match": {"alert_rule.sub_tenant_id": "sub_tenant_id","created_at": {"$gte": ISODate("2025-10-01T00:00:00Z"),"$lte": ISODate("2025-10-31T23:59:59Z")}}},
+{"$project": {"_id": 0,"alert_type": "$alert_info.alert_type","name": "$alert_info.name","severity": "$alert_info.severity","timestamp": "$created_at","location": "$alert_info.location","status": "$alert_info.status"}}
+])
+
+Example 12: "Show me all geofence alerts for plate 123 ABC"
+Answer:
+db.Asset.aggregate([
+{"$match": {"sub_tenant_id": "sub_tenant_id", "details.plate_number": {"$regex": "^123 ABC$", "$options": "i"}}},
+{"$lookup": {"from": "AlertHistory","localField": "_id","foreignField": "device_context.asset_id","as": "alerts"}},
+{"$unwind": "$alerts"},
+{"$match": {"alerts.alert_info.alert_type": "geofence"}},
+{"$project": {"_id": 0,"plate_number": "$details.plate_number","alert_type": "$alerts.alert_info.alert_type","geofence_name": "$alerts.alert_info.name","timestamp": "$alerts.created_at","location": "$alerts.alert_info.location","status": "$alerts.alert_info.status"}}
 ])
 
 === USER QUESTION ===

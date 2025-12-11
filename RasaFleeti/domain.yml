@@ -1,12 +1,16 @@
 version: "3.1"
 
 intents:
+  - greet
+  - goodbye
+  - bot_challenge
+  - request_report_list
   - request_trips_report
-  - request_idle_report
-  - request_stop_report
+  - request_idle_time_report
+  - request_stop_time_report
   - provide_report_detail
   - request_fleet_summary_report
-  - request_fleet_performance_report
+  - request_fleet_performance_summary_report
   - request_fuel_consumption_report
   - request_odometer_report
   - request_utilization_report
@@ -19,6 +23,7 @@ intents:
   - request_commands_history_report
   - request_events_report
   - request_fleet_info
+  - out_of_scope
 
 entities:
   - report_type
@@ -92,8 +97,23 @@ slots:
       - type: custom
 
 responses:
+  utter_greet:
+  - text: "Hello! I can help you run fleet reports."
+
+  utter_goodbye:
+  - text: "Bye!"
+
+  utter_iamabot:
+  - text: "I am a bot powered by Rasa."
+
+  utter_out_of_scope:
+  - text: "I'm focused on fleet management. Please ask me questions related to fleet reports, and fleet information. For example:\n• Ask for a report: 'trips report for vehicle 390'\n• Ask about fleet info: 'what is the location of vehicle 390?'"
+
+  utter_list_reports:
+  - text: "Here are the reports you can run:\n\n1. **Trips Report / Fleet Statistics Report** - Trip statistics and fleet data\n2. **Fleet Summary Report** - Overview of fleet performance\n3. **Fleet Performance Summary Report** - Detailed performance metrics\n4. **Fuel Trip Consumption Report** - Fuel usage and consumption data\n5. **Odometer Report** - Vehicle mileage and distance tracking\n6. **Utilization Report / Work Hour Report** - Vehicle utilization and work hours\n7. **Stop Time Report** - Vehicle stoppage duration and times\n8. **Idle Time Report** - Idling duration and statistics\n9. **Raw Data Report** - Raw vehicle data\n10. **Track Data Report / All Parameters** - Complete tracking parameters\n11. **Over Speeding Report** - Speed violations and incidents\n12. **Driver Behavior Report** - Driver performance and behavior analysis\n13. **Temperature & Humidity Report** - Environmental sensor data\n14. **Weight Sensor Report** - Weight sensor readings\n15. **Commands History Report** - Command execution history\n16. **Events Report** - Vehicle events and incidents\n\nJust tell me which report you need, along with the vehicle plate number(s) and date range!"
+
   utter_ask_report_form_report_type:
-  - text: "Which report do you need? (e.g. fleet statistics/trips report, fleet summary report, fleet performance summary report, fuel trip consumption report, odometer report, Utilization Report/Work Hour Report, Stop time report , idle time report , Raw Data Report , Track Data Report/All Parameters , Over Speeding Report , Driving Behaviour Report , Temperature & Humidity Report , Weight Sensor Report , Commands History Report , Events Report)"
+  - text: "Here are the reports you can run:\n\n1. **Trips Report / Fleet Statistics Report** - Trip statistics and fleet data\n2. **Fleet Summary Report** - Overview of fleet performance\n3. **Fleet Performance Summary Report** - Detailed performance metrics\n4. **Fuel Trip Consumption Report** - Fuel usage and consumption data\n5. **Odometer Report** - Vehicle mileage and distance tracking\n6. **Utilization Report / Work Hour Report** - Vehicle utilization and work hours\n7. **Stop Time Report** - Vehicle stoppage duration and times\n8. **Idle Time Report** - Idling duration and statistics\n9. **Raw Data Report** - Raw vehicle data\n10. **Track Data Report / All Parameters** - Complete tracking parameters\n11. **Over Speeding Report** - Speed violations and incidents\n12. **Driver Behavior Report** - Driver performance and behavior analysis\n13. **Temperature & Humidity Report** - Environmental sensor data\n14. **Weight Sensor Report** - Weight sensor readings\n15. **Commands History Report** - Command execution history\n16. **Events Report** - Vehicle events and incidents\n\nJust tell me which report you need, along with the vehicle plate number(s) and date range!"
 
   utter_ask_report_form_assets:
   - text: "What vehicle plate numbers should I use?"

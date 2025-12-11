@@ -309,6 +309,9 @@ def normalise_report_type(value: Optional[Text]) -> Optional[Text]:
         return "commands history report"
     if text in ["commands report", "command report"]:
         return "commands history report"
+    # Handle "history report" as synonym for commands history report
+    if text == "history report" or (text.startswith("history") and "report" in text):
+        return "commands history report"
     
     # Events report
     if "event" in text and ("report" in text or "log" in text or "history" in text):
@@ -408,9 +411,9 @@ def extract_assets(raw_value: Any) -> List[Text]:
                 "DAYS",
             }
             # Tokens that clearly indicate the text is adding a date/range
-            # after the plate. We include "ON" so that phrases like
-            # "3688 FHD ON 7/10/2025" are reduced back to just "3688 FHD".
-            trigger_tokens = {"FROM", "TO", "BETWEEN", "OF", "ON"} | month_tokens
+            # after the plate. We include "ON" and "FOR" so that phrases like
+            # "3688 FHD ON 7/10/2025" or "3688 FHD FOR SEPTEMBER 2025" are reduced back to just "3688 FHD".
+            trigger_tokens = {"FROM", "TO", "BETWEEN", "OF", "ON", "FOR"} | month_tokens
 
             # If the phrase clearly starts with a 4-digit year and also
             # contains month/date-like tokens, treat it as a date fragment,
@@ -1331,6 +1334,44 @@ def parse_date_range(text: Optional[Text]) -> Optional[Dict[str, Text]]:
                 "end": end_date.isoformat(),
             }
 
+    # Handle month-to-month ranges without day numbers (e.g., "june to sep", "june to september")
+    # This should be interpreted as full month ranges: 1st of first month to last day of second month
+    month_to_month_pattern = re.compile(
+        r"\b(?P<m1>jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec|"
+        r"january|february|march|april|june|july|august|september|october|november|december)"
+        r"\s*(?:to|-|and)\s*"
+        r"(?P<m2>jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec|"
+        r"january|february|march|april|june|july|august|september|october|november|december)"
+        r"(?:\s+(?P<year>\d{4}))?\b",
+        re.IGNORECASE,
+    )
+    m_month_to_month = month_to_month_pattern.search(working)
+    if m_month_to_month:
+        month_str1 = m_month_to_month.group("m1").lower()
+        month_str2 = m_month_to_month.group("m2").lower()
+        month_map = {
+            "jan": 1, "january": 1, "feb": 2, "february": 2, "mar": 3, "march": 3,
+            "apr": 4, "april": 4, "may": 5, "jun": 6, "june": 6,
+            "jul": 7, "july": 7, "aug": 8, "august": 8,
+            "sep": 9, "sept": 9, "september": 9, "oct": 10, "october": 10,
+            "nov": 11, "november": 11, "dec": 12, "december": 12,
+        }
+        month1 = month_map.get(month_str1)
+        month2 = month_map.get(month_str2)
+        
+        if month1 and month2:
+            year_val = int(m_month_to_month.group("year")) if m_month_to_month.group("year") else today.year
+            # Start date: 1st of first month
+            start_d = date(year_val, month1, 1)
+            # End date: last day of second month
+            last_day = calendar.monthrange(year_val, month2)[1]
+            end_d = date(year_val, month2, last_day)
+            # Ensure start <= end (handle year rollover if needed)
+            if start_d > end_d:
+                # If end month is before start month, assume end is in next year
+                end_d = date(year_val + 1, month2, calendar.monthrange(year_val + 1, month2)[1])
+            return {"start": start_d.isoformat(), "end": end_d.isoformat()}
+
     # Handle ranges like "june 5 to september 22" or "5 june to 22 september" (with or without year)
     # by defaulting the year to the current one when it is omitted.
     cross_month_range_pattern = re.compile(
@@ -1550,6 +1591,50 @@ def parse_date_range(text: Optional[Text]) -> Optional[Dict[str, Text]]:
         }
         month_val = month_map.get(month_str)
         if month_val:
+            first_day = date(year_val, month_val, 1)
+            last_day = date(year_val, month_val, calendar.monthrange(year_val, month_val)[1])
+            return {"start": first_day.isoformat(), "end": last_day.isoformat()}
+
+    # Handle month-only input (e.g., "sep", "september") without year or "month" keyword
+    # This should default to the current year and return the full month range
+    # Check if the text is ONLY a month name (possibly with whitespace)
+    month_only_name_pattern = re.compile(
+        r"^\s*(?P<month>jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec|"
+        r"january|february|march|april|june|july|august|september|october|november|december)\s*$",
+        re.IGNORECASE,
+    )
+    m_month_only = month_only_name_pattern.search(working.strip())
+    if m_month_only:
+        month_str = m_month_only.group("month").lower()
+        month_map = {
+            "jan": 1,
+            "january": 1,
+            "feb": 2,
+            "february": 2,
+            "mar": 3,
+            "march": 3,
+            "apr": 4,
+            "april": 4,
+            "may": 5,
+            "jun": 6,
+            "june": 6,
+            "jul": 7,
+            "july": 7,
+            "aug": 8,
+            "august": 8,
+            "sep": 9,
+            "sept": 9,
+            "september": 9,
+            "oct": 10,
+            "october": 10,
+            "nov": 11,
+            "november": 11,
+            "dec": 12,
+            "december": 12,
+        }
+        month_val = month_map.get(month_str)
+        if month_val:
+            year_val = today.year
             first_day = date(year_val, month_val, 1)
             last_day = date(year_val, month_val, calendar.monthrange(year_val, month_val)[1])
             return {"start": first_day.isoformat(), "end": last_day.isoformat()}
@@ -2006,6 +2091,43 @@ class ValidateReportForm(FormValidationAction):
     def name(self) -> Text:
         return "validate_report_form"
 
+    def _is_textual_fleet_query(self, tracker: Tracker) -> bool:
+        """Check if the latest message is a textual fleet query (request_fleet_info intent or text patterns)."""
+        latest = tracker.latest_message or {}
+        intent = latest.get("intent", {})
+        intent_name = intent.get("name") if isinstance(intent, dict) else None
+        
+        # Check intent first
+        if intent_name == "request_fleet_info":
+            return True
+        
+        # Also check text patterns for common textual fleet queries
+        # This helps catch cases where intent might be misclassified
+        text = (latest.get("text") or "").lower()
+        if not text:
+            return False
+        
+        # Textual fleet query patterns (questions about vehicle info, not reports)
+        textual_patterns = [
+            "current location", "where is", "location of", "what is the location",
+            "driver name", "name of driver", "who is the driver",
+            "what is", "tell me", "show me", "give me",
+            "engine status", "battery voltage", "speed", "distance",
+            "idle", "moving", "gps location", "last location",
+            "which device", "what device", "highest speed", "total distance"
+        ]
+        
+        # Check if text contains textual patterns but NOT report-related words
+        has_textual_pattern = any(pattern in text for pattern in textual_patterns)
+        has_report_word = any(word in text for word in ["report", "reports", "reporting"])
+        
+        # If it has textual patterns but no report words, it's likely a textual fleet query
+        if has_textual_pattern and not has_report_word:
+            logger.info("_is_textual_fleet_query: Detected textual fleet query by text pattern. Text: %r", text)
+            return True
+        
+        return False
+
     async def required_slots(
         self,
         slots_mapped_in_domain: List[Text],
@@ -2013,6 +2135,11 @@ class ValidateReportForm(FormValidationAction):
         tracker: Tracker,
         domain: Dict[Text, Any],
     ) -> List[Text]:
+        # Check if this is a textual fleet query - if so, return empty list to skip form
+        if self._is_textual_fleet_query(tracker):
+            logger.info("required_slots: Detected textual fleet query, skipping form slots")
+            return []
+        
         required = ["report_type"]
         # Normalise report_type so synonyms like "driver behaviour report" map
         # correctly to the keys used in REPORT_SPECS and endpoint routing.
@@ -2063,6 +2190,12 @@ class ValidateReportForm(FormValidationAction):
     ) -> Dict[Text, Any]:
         # Normalize input spaces BEFORE any processing
         normalize_input(tracker)
+        
+        # Check if this is a textual fleet query - if so, exit form
+        if self._is_textual_fleet_query(tracker):
+            logger.info("validate_report_type: Detected textual fleet query, exiting form")
+            # Return None to reject the slot, which will allow the rule to handle it
+            return {"report_type": None}
         
         # First try to normalize from slot_value
         normalised = normalise_report_type(slot_value)
@@ -2123,76 +2256,8 @@ class ValidateReportForm(FormValidationAction):
                 updates["end_date"] = None
                 updates["driver"] = None
             
-            # For utilization and fleet performance reports, ensure we get a date range
-            if normalised in ["utilization report", "fleet performance summary report"]:
-                date_values = [
-                    str(entity.get("value"))
-                    for entity in entities
-                    if entity.get("entity") == "date" and entity.get("value")
-                ]
-                
-                # If no date entities found, clear any existing date range to force the prompt
-                if not date_values and not tracker.get_slot("date_range"):
-                    return {
-                        "report_type": normalised,
-                        "date_range": None,
-                        "start_date": None,
-                        "end_date": None
-                    }
-                    
-                text = latest.get("text") or " ".join(date_values)
-                if text:
-                    logger.info(
-                        "validate_report_type: auto date from entities=%r joined=%r",
-                        date_values,
-                        text,
-                    )
-                    parsed = parse_date_range(text)
-                    logger.info(
-                        "validate_report_type: auto parsed date_range=%r", parsed
-                    )
-                    if parsed:
-                        start = parsed["start"]
-                        end = parsed["end"]
-                        summary = start if start == end else f"{start} to {end}"
-                        updates.update(
-                            {
-                                "date_range": summary,
-                                "start_date": start,
-                                "end_date": end,
-                            }
-                        )
-            
-            # Existing date handling for other report types
-            elif not tracker.get_slot("date_range"):
-                date_values = [
-                    str(entity.get("value"))
-                    for entity in entities
-                    if entity.get("entity") == "date" and entity.get("value")
-                ]
-                text = latest.get("text") or " ".join(date_values)
-                if text:
-                    logger.info(
-                        "validate_report_type: auto date from entities=%r joined=%r",
-                        date_values,
-                        text,
-                    )
-                    parsed = parse_date_range(text)
-                    logger.info(
-                        "validate_report_type: auto parsed date_range=%r", parsed
-                    )
-                    if parsed:
-                        start = parsed["start"]
-                        end = parsed["end"]
-                        summary = start if start == end else f"{start} to {end}"
-                        updates.update(
-                            {
-                                "date_range": summary,
-                                "start_date": start,
-                                "end_date": end,
-                            }
-                        )
-
+            # STEP 1: Extract assets FIRST before date parsing
+            # This ensures we can remove asset values from text before parsing dates
             # For reports that require assets, handle asset extraction from the current message.
             needs_assets = REPORT_SPECS.get(normalised, {}).get("requires_assets", False)
             needs_dates = REPORT_SPECS.get(normalised, {}).get("requires_dates", False)
@@ -2212,28 +2277,346 @@ class ValidateReportForm(FormValidationAction):
                     updates["driver"] = None
                 
             # Try to extract assets from the current message entities
-            asset_values = [
-                str(entity.get("value"))
-                for entity in entities
-                if entity.get("entity") == "asset" and entity.get("value")
-            ]
+            # Collect and combine consecutive asset entities that look like one plate
+            asset_entities = []
+            for entity in entities:
+                if entity.get("entity") == "asset" and entity.get("value"):
+                    value = str(entity.get("value")).strip()
+                    # Remove any commas that might have been introduced incorrectly
+                    value = value.replace(",", " ").strip()
+                    if value:
+                        asset_entities.append({
+                            "value": value,
+                            "start": entity.get("start", 0),
+                            "end": entity.get("end", 0)
+                        })
+            
+            # Sort by position and combine consecutive entities
+            asset_entities.sort(key=lambda x: x["start"])
+            # Stop words that should prevent combination
+            stop_words = {"of", "for", "from", "to", "and", "or", "the", "a", "an", "in", "on", "at", 
+                         "by", "with", "between", "during", "vehicle", "vehicles", "plate", "plates"}
+            combined_assets = []
+            i = 0
+            while i < len(asset_entities):
+                current = asset_entities[i]["value"]
+                if i + 1 < len(asset_entities):
+                    next_entity = asset_entities[i + 1]
+                    gap = next_entity["start"] - asset_entities[i]["end"]
+                    if gap <= 5:
+                        # Check if there are stop words in the gap text
+                        text_between = ""
+                        if latest.get("text") and asset_entities[i]["end"] < next_entity["start"]:
+                            text_between = latest.get("text", "")[asset_entities[i]["end"]:next_entity["start"]].lower().strip()
+                        
+                        # Check if any stop word appears in the gap
+                        has_stop_word = False
+                        if text_between:
+                            words_between = text_between.split()
+                            has_stop_word = any(word in stop_words for word in words_between)
+                        
+                        # Also check if the next entity value itself is a stop word
+                        next_value_lower = next_entity["value"].strip().lower()
+                        if next_value_lower in stop_words:
+                            has_stop_word = True
+                        
+                        if not has_stop_word:
+                            current_clean = current.strip().upper()
+                            next_clean = next_entity["value"].strip().upper()
+                            if (current_clean.isdigit() and next_clean.isalpha()) or \
+                               (current_clean.isalpha() and next_clean.isdigit()) or \
+                               (current_clean.isdigit() and next_clean.isalnum() and not next_clean.isdigit()) or \
+                               (current_clean.isalnum() and not current_clean.isdigit() and next_clean.isdigit()):
+                                # Combine them and normalize spaces (handle multiple spaces)
+                                combined = normalize_spaces(f"{current} {next_entity['value']}")
+                                # Remove any commas that might have been introduced
+                                combined = combined.replace(",", " ").strip()
+                                combined_assets.append(combined)
+                                i += 2
+                                continue
+                # Not combinable, add as-is (but normalize spaces and remove commas)
+                normalized_current = normalize_spaces(current)
+                normalized_current = normalized_current.replace(",", " ").strip()
+                combined_assets.append(normalized_current)
+                i += 1
+            
+            # Final normalization: ensure all assets have normalized spaces and no commas
+            asset_values = [normalize_spaces(asset.replace(",", " ").strip()) for asset in combined_assets if asset.strip()]
+            
+            # STEP 2: Extract and validate assets FIRST
+            extracted_assets_list = []
             if asset_values:
-                extracted = extract_assets(asset_values)
+                extracted_assets_list = extract_assets(asset_values)
                 logger.info(
-                    "validate_report_type: auto assets from entities=%r extracted=%r",
-                    asset_values,
-                    extracted,
+                    "validate_report_type: STEP 1 - extracted assets: %r",
+                    extracted_assets_list,
                 )
-                if extracted:
-                    updates["assets"] = extracted
+                if extracted_assets_list:
+                    updates["assets"] = extracted_assets_list
+            
+            # STEP 3: Remove asset values from text BEFORE date parsing
+            text = latest.get("text") or ""
+            text_for_date_parsing = text
+            if extracted_assets_list:
+                for asset in extracted_assets_list:
+                    # Remove asset as whole word (case-insensitive)
+                    asset_pattern = re.escape(asset)
+                    # Match as whole word with word boundaries
+                    pattern = r'\b' + asset_pattern + r'\b'
+                    text_for_date_parsing = re.sub(pattern, '', text_for_date_parsing, flags=re.IGNORECASE)
+                # Clean up extra spaces
+                text_for_date_parsing = normalize_spaces(text_for_date_parsing) or ""
+                logger.info(
+                    "validate_report_type: STEP 2 - Removed assets from text. original=%r assets=%r filtered=%r",
+                    text,
+                    extracted_assets_list,
+                    text_for_date_parsing,
+                )
+            
+            # STEP 4: NOW extract dates from the filtered text (without assets)
+            # For utilization and fleet performance reports, ensure we get a date range
+            if normalised in ["utilization report", "fleet performance summary report"]:
+                date_values = [
+                    str(entity.get("value"))
+                    for entity in entities
+                    if entity.get("entity") == "date" and entity.get("value")
+                ]
+                
+                # Filter date_values to exclude any that match extracted assets
+                filtered_date_values = []
+                for date_val in date_values:
+                    date_val_clean = str(date_val).strip()
+                    is_asset_match = False
+                    for asset in extracted_assets_list:
+                        if date_val_clean.lower() in asset.lower() or asset.lower() in date_val_clean.lower():
+                            is_asset_match = True
+                            logger.info(
+                                "validate_report_type: EXCLUDING date entity '%s' because it matches asset '%s'",
+                                date_val_clean,
+                                asset,
+                            )
+                            break
+                    if not is_asset_match:
+                        filtered_date_values.append(date_val)
+                
+                date_values = filtered_date_values
+                
+                # If no date entities found, clear any existing date range to force the prompt
+                if not date_values and not tracker.get_slot("date_range"):
+                    return {
+                        "report_type": normalised,
+                        "date_range": None,
+                        "start_date": None,
+                        "end_date": None
+                    }
+                    
+                # Use filtered text (without assets) for date parsing
+                date_text = text_for_date_parsing or " ".join(date_values)
+                parsed = None
+                if date_text:
+                    # CRITICAL: Check if the text is actually a report name before parsing as date
+                    # This prevents "work hour report" from being parsed as a date when user repeats report name
+                    text_lower = date_text.lower().strip()
+                    potential_report_type = normalise_report_type(text_lower)
+                    if potential_report_type and potential_report_type != normalised:
+                        # The text contains a different report name, don't parse as date
+                        logger.info(
+                            "validate_report_type: Text '%s' contains report name '%s', skipping date parsing",
+                            date_text,
+                            potential_report_type,
+                        )
+                    else:
+                        logger.info(
+                            "validate_report_type: STEP 3 - parsing date from filtered text. date_values=%r text=%r",
+                            date_values,
+                            date_text,
+                        )
+                        parsed = parse_date_range(date_text)
+                        logger.info(
+                            "validate_report_type: auto parsed date_range=%r", parsed
+                        )
+                        # If parsed date is a single day but the input was just a month name, expand to full month
+                        # Check date_values first (they contain the actual date entities)
+                        if parsed and date_values and len(date_values) == 1:
+                            month_text = date_values[0].strip().lower()
+                            # Check if it's a month name
+                            month_only_name_pattern = re.compile(
+                                r"^\s*(?P<month>jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec|"
+                                r"january|february|march|april|june|july|august|september|october|november|december)\s*$",
+                                re.IGNORECASE,
+                            )
+                            if month_only_name_pattern.match(month_text):
+                                # Expand to full month
+                                month_map = {
+                                    "jan": 1, "january": 1, "feb": 2, "february": 2,
+                                    "mar": 3, "march": 3, "apr": 4, "april": 4, "may": 5,
+                                    "jun": 6, "june": 6, "jul": 7, "july": 7,
+                                    "aug": 8, "august": 8, "sep": 9, "sept": 9, "september": 9,
+                                    "oct": 10, "october": 10, "nov": 11, "november": 11,
+                                    "dec": 12, "december": 12,
+                                }
+                                month_val = month_map.get(month_text)
+                                if month_val:
+                                    year_val = date.today().year
+                                    first_day = date(year_val, month_val, 1)
+                                    last_day = date(year_val, month_val, calendar.monthrange(year_val, month_val)[1])
+                                    parsed = {"start": first_day.isoformat(), "end": last_day.isoformat()}
+                                    logger.info(
+                                        "validate_report_type: Expanded month-only date '%s' to full month: %r",
+                                        month_text,
+                                        parsed
+                                    )
+                    
+                    # CRITICAL: Validate parsed date doesn't match any asset year
+                    if parsed and extracted_assets_list:
+                        start_date_str = parsed.get("start", "")
+                        end_date_str = parsed.get("end", "")
+                        for asset in extracted_assets_list:
+                            asset_clean = asset.strip()
+                            year_match = re.search(r'\b(\d{4})\b', asset_clean)
+                            if year_match:
+                                year_value = year_match.group(1)
+                                if start_date_str.startswith(year_value) or end_date_str.startswith(year_value):
+                                    logger.info(
+                                        "validate_report_type: REJECTING parsed date because it matches year '%s' in asset '%s'",
+                                        year_value,
+                                        asset_clean,
+                                    )
+                                    parsed = None
+                                    break
+                    
+                    if parsed:
+                        start = parsed["start"]
+                        end = parsed["end"]
+                        summary = start if start == end else f"{start} to {end}"
+                        updates.update(
+                            {
+                                "date_range": summary,
+                                "start_date": start,
+                                "end_date": end,
+                            }
+                        )
+            
+            # Existing date handling for other report types
+            elif not tracker.get_slot("date_range"):
+                date_values = [
+                    str(entity.get("value"))
+                    for entity in entities
+                    if entity.get("entity") == "date" and entity.get("value")
+                ]
+                
+                # Filter date_values to exclude any that match extracted assets
+                filtered_date_values = []
+                for date_val in date_values:
+                    date_val_clean = str(date_val).strip()
+                    is_asset_match = False
+                    for asset in extracted_assets_list:
+                        if date_val_clean.lower() in asset.lower() or asset.lower() in date_val_clean.lower():
+                            is_asset_match = True
+                            logger.info(
+                                "validate_report_type: EXCLUDING date entity '%s' because it matches asset '%s'",
+                                date_val_clean,
+                                asset,
+                            )
+                            break
+                    if not is_asset_match:
+                        filtered_date_values.append(date_val)
+                
+                date_values = filtered_date_values
+                
+                # Use filtered text (without assets) for date parsing
+                date_text = text_for_date_parsing or " ".join(date_values)
+                parsed = None
+                if date_text:
+                    # CRITICAL: Check if the text is actually a report name before parsing as date
+                    # This prevents "work hour report" from being parsed as a date when user repeats report name
+                    text_lower = date_text.lower().strip()
+                    potential_report_type = normalise_report_type(text_lower)
+                    if potential_report_type and potential_report_type != normalised:
+                        # The text contains a different report name, don't parse as date
+                        logger.info(
+                            "validate_report_type: Text '%s' contains report name '%s', skipping date parsing",
+                            date_text,
+                            potential_report_type,
+                        )
+                    else:
+                        logger.info(
+                            "validate_report_type: STEP 3 - parsing date from filtered text. date_values=%r text=%r",
+                            date_values,
+                            date_text,
+                        )
+                        parsed = parse_date_range(date_text)
+                        logger.info(
+                            "validate_report_type: auto parsed date_range=%r", parsed
+                        )
+                        # If parsed date is a single day but the input was just a month name, expand to full month
+                        # Check date_values first (they contain the actual date entities)
+                        if parsed and date_values and len(date_values) == 1:
+                            month_text = date_values[0].strip().lower()
+                            # Check if it's a month name
+                            month_only_name_pattern = re.compile(
+                                r"^\s*(?P<month>jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec|"
+                                r"january|february|march|april|june|july|august|september|october|november|december)\s*$",
+                                re.IGNORECASE,
+                            )
+                            if month_only_name_pattern.match(month_text):
+                                # Expand to full month
+                                month_map = {
+                                    "jan": 1, "january": 1, "feb": 2, "february": 2,
+                                    "mar": 3, "march": 3, "apr": 4, "april": 4, "may": 5,
+                                    "jun": 6, "june": 6, "jul": 7, "july": 7,
+                                    "aug": 8, "august": 8, "sep": 9, "sept": 9, "september": 9,
+                                    "oct": 10, "october": 10, "nov": 11, "november": 11,
+                                    "dec": 12, "december": 12,
+                                }
+                                month_val = month_map.get(month_text)
+                                if month_val:
+                                    year_val = date.today().year
+                                    first_day = date(year_val, month_val, 1)
+                                    last_day = date(year_val, month_val, calendar.monthrange(year_val, month_val)[1])
+                                    parsed = {"start": first_day.isoformat(), "end": last_day.isoformat()}
+                                    logger.info(
+                                        "validate_report_type: Expanded month-only date '%s' to full month: %r",
+                                        month_text,
+                                        parsed
+                                    )
+                    
+                    # CRITICAL: Validate parsed date doesn't match any asset year
+                    if parsed and extracted_assets_list:
+                        start_date_str = parsed.get("start", "")
+                        end_date_str = parsed.get("end", "")
+                        for asset in extracted_assets_list:
+                            asset_clean = asset.strip()
+                            year_match = re.search(r'\b(\d{4})\b', asset_clean)
+                            if year_match:
+                                year_value = year_match.group(1)
+                                if start_date_str.startswith(year_value) or end_date_str.startswith(year_value):
+                                    logger.info(
+                                        "validate_report_type: REJECTING parsed date because it matches year '%s' in asset '%s'",
+                                        year_value,
+                                        asset_clean,
+                                    )
+                                    parsed = None
+                                    break
+                    
+                    if parsed:
+                        start = parsed["start"]
+                        end = parsed["end"]
+                        summary = start if start == end else f"{start} to {end}"
+                        updates.update(
+                            {
+                                "date_range": summary,
+                                "start_date": start,
+                                "end_date": end,
+                            }
+                        )
+            
             # Note: We no longer recover assets from history to avoid using stale data
             # from previous requests. Assets must be explicitly provided in the current message.
 
             return updates
             
-        dispatcher.utter_message(
-            text="I can run the following reports: fleet statistics/trips report, fleet summary report, fleet performance summary report, fuel trip consumption report, odometer report, Utilization Report/Work Hour Report, Stop time report , idle time report , Raw Data Report , Track Data Report/All Parameters , Over Speeding Report , Driving Behaviour Report , Temperature & Humidity Report , Weight Sensor Report , Commands History Report , Events Report."
-        )
+        # Don't show message here - let action_prompt_report_type handle it to avoid duplicates
         return {"report_type": None}
 
     def validate_assets(
@@ -2246,6 +2629,12 @@ class ValidateReportForm(FormValidationAction):
         # Normalize input spaces BEFORE any processing
         normalize_input(tracker)
         
+        # Check if this is a textual fleet query - if so, exit form
+        if self._is_textual_fleet_query(tracker):
+            logger.info("validate_assets: Detected textual fleet query, exiting form")
+            # Return None to reject the slot, which will allow the rule to handle it
+            return {"assets": None}
+        
         report_type = tracker.get_slot("report_type") or ""
         report_spec = REPORT_SPECS.get(report_type, {})
         
@@ -2253,26 +2642,270 @@ class ValidateReportForm(FormValidationAction):
         # This ensures we get all assets from the current request, not just from slot_value
         latest = tracker.latest_message or {}
         entities = latest.get("entities") or []
-        asset_values = [
+        
+        # Collect asset entities and their positions to potentially combine consecutive ones
+        asset_entities = []
+        for entity in entities:
+            if entity.get("entity") == "asset" and entity.get("value"):
+                value = str(entity.get("value")).strip()
+                # Remove any commas that might have been introduced incorrectly
+                value = value.replace(",", " ").strip()
+                if value:
+                    asset_entities.append({
+                        "value": value,
+                        "start": entity.get("start", 0),
+                        "end": entity.get("end", 0)
+                    })
+        
+        # Sort by position in the text
+        asset_entities.sort(key=lambda x: x["start"])
+        
+        # Combine consecutive asset entities that look like they should be one plate
+        # (e.g., "3688" followed by "FHD" should become "3688 FHD")
+        # But don't combine if there are English stop words between them
+        stop_words = {"of", "for", "from", "to", "and", "or", "the", "a", "an", "in", "on", "at", 
+                     "by", "with", "between", "during", "vehicle", "vehicles", "plate", "plates"}
+        combined_assets = []
+        i = 0
+        while i < len(asset_entities):
+            current = asset_entities[i]["value"]
+            # Check if next entity is close and looks like it should be combined
+            if i + 1 < len(asset_entities):
+                next_entity = asset_entities[i + 1]
+                # If they're close together (within reasonable distance) and one is numeric, one is alphabetic
+                gap = next_entity["start"] - asset_entities[i]["end"]
+                if gap <= 5:  # Close together (allowing for spaces)
+                    # Check if there are stop words in the gap text
+                    # Get the text between the entities to check for stop words
+                    text_between = ""
+                    if latest.get("text") and asset_entities[i]["end"] < next_entity["start"]:
+                        text_between = latest.get("text", "")[asset_entities[i]["end"]:next_entity["start"]].lower().strip()
+                    
+                    # Check if any stop word appears in the gap
+                    has_stop_word = False
+                    if text_between:
+                        words_between = text_between.split()
+                        has_stop_word = any(word in stop_words for word in words_between)
+                    
+                    # Also check if the next entity value itself is a stop word
+                    next_value_lower = next_entity["value"].strip().lower()
+                    if next_value_lower in stop_words:
+                        has_stop_word = True
+                    
+                        if not has_stop_word:
+                            current_clean = current.strip().upper()
+                            next_clean = next_entity["value"].strip().upper()
+                            # If one is numeric and the other is alphabetic, they're likely parts of the same plate
+                            if (current_clean.isdigit() and next_clean.isalpha()) or \
+                               (current_clean.isalpha() and next_clean.isdigit()) or \
+                               (current_clean.isdigit() and next_clean.isalnum() and not next_clean.isdigit()) or \
+                               (current_clean.isalnum() and not current_clean.isdigit() and next_clean.isdigit()):
+                                # Combine them and normalize spaces (handle multiple spaces)
+                                combined = normalize_spaces(f"{current} {next_entity['value']}")
+                                # Remove any commas that might have been introduced
+                                combined = combined.replace(",", " ").strip()
+                                combined_assets.append(combined)
+                                i += 2  # Skip both
+                                continue
+            # Not combinable, add as-is
+            combined_assets.append(current)
+            i += 1
+        
+        asset_values = combined_assets
+        
+        # Extract assets FIRST before date parsing - we need to remove them from text
+        extracted_assets_list = []
+        if asset_values:
+            extracted_assets_list = extract_assets(asset_values)
+            logger.info(
+                "validate_assets: extracted assets BEFORE date parsing: %r",
+                extracted_assets_list,
+            )
+        
+        # Also check for dates in the message - if user provides both asset and date
+        # when asked for assets only, we should extract both
+        date_values = [
             str(entity.get("value"))
             for entity in entities
-            if entity.get("entity") == "asset" and entity.get("value")
+            if entity.get("entity") == "date" and entity.get("value")
         ]
+        text = latest.get("text") or ""
         
-        # Extract assets from entities first (most reliable)
-        if asset_values:
-            extracted_from_entities = extract_assets(asset_values)
+        # CRITICAL: Remove asset values from text before date parsing
+        # This prevents "2020" in "2020 ADX" from being parsed as a date
+        text_for_date_parsing = text
+        if extracted_assets_list:
+            for asset in extracted_assets_list:
+                # Remove asset as whole word (case-insensitive)
+                asset_pattern = re.escape(asset)
+                # Match as whole word with word boundaries
+                pattern = r'\b' + asset_pattern + r'\b'
+                text_for_date_parsing = re.sub(pattern, '', text_for_date_parsing, flags=re.IGNORECASE)
+            # Clean up extra spaces
+            text_for_date_parsing = normalize_spaces(text_for_date_parsing) or ""
             logger.info(
-                "validate_assets: asset entities=%r extracted_from_entities=%r",
-                asset_values,
-                extracted_from_entities,
+                "validate_assets: Removed assets from text before date parsing. "
+                "original_text=%r assets=%r filtered_text=%r",
+                text,
+                extracted_assets_list,
+                text_for_date_parsing,
             )
+        
+        # Also filter date_values to exclude any that match extracted assets
+        filtered_date_values = []
+        for date_val in date_values:
+            date_val_clean = str(date_val).strip()
+            is_asset_match = False
+            for asset in extracted_assets_list:
+                # Check if date value is part of or matches asset
+                if date_val_clean.lower() in asset.lower() or asset.lower() in date_val_clean.lower():
+                    is_asset_match = True
+                    logger.info(
+                        "validate_assets: EXCLUDING date entity '%s' because it matches asset '%s'",
+                        date_val_clean,
+                        asset,
+                    )
+                    break
+            if not is_asset_match:
+                filtered_date_values.append(date_val)
+        
+        date_values = filtered_date_values
+        
+        # Try to parse dates from the message text if date entities found or text contains date-like patterns
+        parsed_date = None
+        if text_for_date_parsing:
+            # Always use the filtered text (without assets) for date parsing to preserve date range context
+            # (e.g., "from 1 sep to 30 sep" needs the full context)
+            # But first, try to extract just the date portion if we can identify it
+            lowered = text_for_date_parsing.lower()
+            
+            # Check if text contains date range indicators
+            has_date_range_indicators = any(
+                indicator in lowered 
+                for indicator in ["from", "to", "between", "and", "-", "→"]
+            )
+            
+            # If we have date entities, try using them first, but fall back to full text
+            # if the text contains date range indicators (which suggests a range)
+            if date_values and not has_date_range_indicators:
+                # Simple date entities without range indicators - use them
+                date_text = " ".join(date_values)
+            else:
+                # Use filtered text (without assets) to preserve date range context
+                # Try to extract date portion by looking for date-related keywords
+                date_text = text_for_date_parsing
+                
+                # If text starts with asset info, try to find where date portion begins
+                if has_date_range_indicators:
+                    # Look for "from", "between", etc. to find the start of date portion
+                    # Priority: "from" > "between" > "on" > "for"
+                    for keyword in ["from", "between", "on", "for"]:
+                        idx = lowered.find(keyword)
+                        if idx != -1:
+                            # Extract from the keyword onwards (use filtered text)
+                            date_text = text_for_date_parsing[idx:]
+                            break
+                    
+                    # If we still have asset info at the start, try to remove it
+                    # by finding where the date pattern starts (e.g., number followed by month name)
+                    if date_text == text_for_date_parsing:
+                        # Try to find date pattern: number + month name
+                        date_pattern = re.compile(
+                            r'\b\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec|'
+                            r'january|february|march|april|june|july|august|september|october|november|december)',
+                            re.IGNORECASE
+                        )
+                        match = date_pattern.search(text_for_date_parsing)
+                        if match:
+                            # Extract from the date pattern onwards, but include any preceding "from" or "between"
+                            # Look backwards for "from" or "between" within a reasonable distance (20 chars)
+                            start_pos = match.start()
+                            lookback_start = max(0, start_pos - 20)
+                            lookback_text = text_for_date_parsing[lookback_start:start_pos].lower()
+                            if "from" in lookback_text:
+                                from_idx = text_for_date_parsing.lower().rfind("from", lookback_start, start_pos)
+                                if from_idx != -1:
+                                    date_text = text_for_date_parsing[from_idx:]
+                            elif "between" in lookback_text:
+                                between_idx = text_for_date_parsing.lower().rfind("between", lookback_start, start_pos)
+                                if between_idx != -1:
+                                    date_text = text_for_date_parsing[between_idx:]
+                            else:
+                                date_text = text_for_date_parsing[match.start():]
+            
+            # Extract date range from the filtered text (which has assets removed)
+            # Try parsing with the extracted date_text first
+            parsed_date = parse_date_range(date_text) if date_text else None
+            
+            # CRITICAL: After parsing, validate that the parsed date doesn't match any asset
+            # If the parsed date is just a year that matches an asset, reject it
+            if parsed_date and extracted_assets_list:
+                start_date_str = parsed_date.get("start", "")
+                end_date_str = parsed_date.get("end", "")
+                
+                # Check if start or end date is just a year that matches an asset
+                for asset in extracted_assets_list:
+                    asset_clean = asset.strip()
+                    # Check if asset contains a 4-digit number (like "2020" in "2020 ADX")
+                    year_match = re.search(r'\b(\d{4})\b', asset_clean)
+                    if year_match:
+                        year_value = year_match.group(1)
+                        # Check if parsed date is for this year
+                        if start_date_str.startswith(year_value) or end_date_str.startswith(year_value):
+                            logger.info(
+                                "validate_assets: REJECTING parsed date because it matches year '%s' in asset '%s'. "
+                                "parsed_date=%r",
+                                year_value,
+                                asset_clean,
+                                parsed_date,
+                            )
+                            parsed_date = None
+                            break
+            
+            # If parsing failed and date_text starts with "from", try without it
+            # (parse_date_range pattern looks for "X to Y" format)
+            if not parsed_date and date_text.lower().strip().startswith("from"):
+                # Remove "from" and try again
+                date_text_without_from = date_text[4:].strip()  # Remove "from" (4 chars)
+                parsed_date = parse_date_range(date_text_without_from)
+                if parsed_date:
+                    logger.info(
+                        "validate_assets: parsed date after removing 'from'. date_text_without_from=%r parsed_date=%r",
+                        date_text_without_from,
+                        parsed_date,
+                    )
+            
+            if parsed_date:
+                logger.info(
+                    "validate_assets: found date in message when asking for assets. original_text=%r date_text=%r parsed_date=%r",
+                    text,
+                    date_text,
+                    parsed_date,
+                )
+        
+        # Use the already extracted assets (we extracted them earlier before date parsing)
+        if extracted_assets_list:
+            logger.info(
+                "validate_assets: using pre-extracted assets: %r",
+                extracted_assets_list,
+            )
+            extracted_from_entities = extracted_assets_list
             if extracted_from_entities:
-                return {"assets": extracted_from_entities}
+                # If we also found a date, include it in the return
+                result = {"assets": extracted_from_entities}
+                if parsed_date:
+                    start = parsed_date["start"]
+                    end = parsed_date["end"]
+                    summary = start if start == end else f"{start} to {end}"
+                    result.update({
+                        "date_range": summary,
+                        "start_date": start,
+                        "end_date": end,
+                    })
+                return result
         
         # If no assets found in entities, try extracting from the current message text
         # This handles cases where the NLU didn't recognize the asset as an entity
-        text = latest.get("text") or ""
         assets_from_text = []
         if text and not asset_values:
             # Try to extract assets directly from the message text
@@ -2283,7 +2916,18 @@ class ValidateReportForm(FormValidationAction):
                 assets_from_text,
             )
             if assets_from_text:
-                return {"assets": assets_from_text}
+                # If we also found a date, include it in the return
+                result = {"assets": assets_from_text}
+                if parsed_date:
+                    start = parsed_date["start"]
+                    end = parsed_date["end"]
+                    summary = start if start == end else f"{start} to {end}"
+                    result.update({
+                        "date_range": summary,
+                        "start_date": start,
+                        "end_date": end,
+                    })
+                return result
         
         # If no assets found in current message (neither entities nor text extraction),
         # check if slot_value matches the current message text (from domain mapping)
@@ -2300,7 +2944,18 @@ class ValidateReportForm(FormValidationAction):
                         "validate_assets: slot_value matches current message, using it. assets=%r",
                         assets_from_slot,
                     )
-                    return {"assets": assets_from_slot}
+                    result = {"assets": assets_from_slot}
+                    # If we also found a date, include it in the return
+                    if parsed_date:
+                        start = parsed_date["start"]
+                        end = parsed_date["end"]
+                        summary = start if start == end else f"{start} to {end}"
+                        result.update({
+                            "date_range": summary,
+                            "start_date": start,
+                            "end_date": end,
+                        })
+                    return result
             elif assets_from_slot:
                 # Old assets exist but not in current message - clear them
                 logger.info(
@@ -2314,11 +2969,29 @@ class ValidateReportForm(FormValidationAction):
         assets = extract_assets(slot_value)
         logger.info("validate_assets: slot_value=%r extracted_assets=%r", slot_value, assets)
         
+        # If we found a date but no assets from slot_value, still return the date
+        result = {}
+        if assets:
+            result["assets"] = assets
+        if parsed_date:
+            start = parsed_date["start"]
+            end = parsed_date["end"]
+            summary = start if start == end else f"{start} to {end}"
+            result.update({
+                "date_range": summary,
+                "start_date": start,
+                "end_date": end,
+            })
+        
         # Don't send messages in validation - let the form handle prompting
         # Just return None if assets are required but not found
         if report_spec.get("requires_assets") and not assets:
+            if parsed_date:
+                # Return date even if assets are missing - form will ask for assets again
+                return result
             return {"assets": None}
-        return {"assets": assets}
+        
+        return result if result else {"assets": assets}
 
     def validate_date_range(
         self,
@@ -2330,8 +3003,20 @@ class ValidateReportForm(FormValidationAction):
         # Normalize input spaces BEFORE any processing
         normalize_input(tracker)
         
+        # Check if this is a textual fleet query - if so, exit form
+        if self._is_textual_fleet_query(tracker):
+            logger.info("validate_date_range: Detected textual fleet query, exiting form")
+            return {
+                "date_range": None,
+            }
+        
         report_type = tracker.get_slot("report_type") or ""
         report_spec = REPORT_SPECS.get(report_type, {})
+        
+        # CRITICAL: Get assets from tracker to exclude them from date parsing
+        assets_slot = tracker.get_slot("assets")
+        extracted_assets_list = extract_assets(assets_slot) if assets_slot else []
+        
         # slot_value can be a single string, or a list of values. However,
         # to robustly handle phrases like "2 june 2025 to 30 nov 2025",
         # we prefer to parse the full latest user message text and only
@@ -2361,10 +3046,107 @@ class ValidateReportForm(FormValidationAction):
             ]
             if date_values:
                 joined = " ".join(date_values)
+        
+        # CRITICAL: Remove asset values from text before date parsing
+        # This prevents "2020" in "2020 ADX" from being parsed as a date
+        text_for_date_parsing = joined
+        if extracted_assets_list:
+            for asset in extracted_assets_list:
+                # Remove asset as whole word (case-insensitive)
+                asset_pattern = re.escape(asset)
+                # Match as whole word with word boundaries
+                pattern = r'\b' + asset_pattern + r'\b'
+                text_for_date_parsing = re.sub(pattern, '', text_for_date_parsing, flags=re.IGNORECASE)
+            # Clean up extra spaces
+            text_for_date_parsing = normalize_spaces(text_for_date_parsing) or ""
+            logger.info(
+                "validate_date_range: Removed assets from text before date parsing. "
+                "original_text=%r assets=%r filtered_text=%r",
+                joined,
+                extracted_assets_list,
+                text_for_date_parsing,
+            )
 
-        logger.info("validate_date_range: raw_slot_value=%r joined_text=%r", slot_value, joined)
-        parsed = parse_date_range(joined) if joined else None
+        logger.info("validate_date_range: raw_slot_value=%r joined_text=%r filtered_text=%r", slot_value, joined, text_for_date_parsing)
+        
+        # CRITICAL: Check if the text is actually a report name before parsing as date
+        # This prevents "work hour report" from being parsed as a date when user repeats report name
+        parsed = None
+        if text_for_date_parsing:
+            text_lower = text_for_date_parsing.lower().strip()
+            potential_report_type = normalise_report_type(text_lower)
+            if potential_report_type:
+                # The text contains a report name, don't parse as date
+                logger.info(
+                    "validate_date_range: Text '%s' contains report name '%s', skipping date parsing",
+                    text_for_date_parsing,
+                    potential_report_type,
+                )
+            else:
+                parsed = parse_date_range(text_for_date_parsing)
+                # If parsed date is a single day but the input was just a month name, expand to full month
+                # Check date entities first (they contain the actual date values)
+                entities = latest.get("entities") or []
+                date_entity_values = [
+                    str(entity.get("value"))
+                    for entity in entities
+                    if entity.get("entity") == "date" and entity.get("value")
+                ]
+                if parsed and date_entity_values and len(date_entity_values) == 1:
+                    month_text = date_entity_values[0].strip().lower()
+                    # Check if it's a month name
+                    month_only_name_pattern = re.compile(
+                        r"^\s*(?P<month>jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec|"
+                        r"january|february|march|april|june|july|august|september|october|november|december)\s*$",
+                        re.IGNORECASE,
+                    )
+                    if month_only_name_pattern.match(month_text):
+                        # Expand to full month
+                        month_map = {
+                            "jan": 1, "january": 1, "feb": 2, "february": 2,
+                            "mar": 3, "march": 3, "apr": 4, "april": 4, "may": 5,
+                            "jun": 6, "june": 6, "jul": 7, "july": 7,
+                            "aug": 8, "august": 8, "sep": 9, "sept": 9, "september": 9,
+                            "oct": 10, "october": 10, "nov": 11, "november": 11,
+                            "dec": 12, "december": 12,
+                        }
+                        month_val = month_map.get(month_text)
+                        if month_val:
+                            year_val = date.today().year
+                            first_day = date(year_val, month_val, 1)
+                            last_day = date(year_val, month_val, calendar.monthrange(year_val, month_val)[1])
+                            parsed = {"start": first_day.isoformat(), "end": last_day.isoformat()}
+                            logger.info(
+                                "validate_date_range: Expanded month-only date '%s' to full month: %r",
+                                month_text,
+                                parsed
+                            )
         logger.info("validate_date_range: parsed=%r", parsed)
+        
+        # CRITICAL: After parsing, validate that the parsed date doesn't match any asset
+        # If the parsed date is just a year that matches an asset, reject it
+        if parsed and extracted_assets_list:
+            start_date_str = parsed.get("start", "")
+            end_date_str = parsed.get("end", "")
+            
+            # Check if start or end date is just a year that matches an asset
+            for asset in extracted_assets_list:
+                asset_clean = asset.strip()
+                # Check if asset contains a 4-digit number (like "2020" in "2020 ADX")
+                year_match = re.search(r'\b(\d{4})\b', asset_clean)
+                if year_match:
+                    year_value = year_match.group(1)
+                    # Check if parsed date is for this year
+                    if start_date_str.startswith(year_value) or end_date_str.startswith(year_value):
+                        logger.info(
+                            "validate_date_range: REJECTING parsed date because it matches year '%s' in asset '%s'. "
+                            "parsed_date=%r",
+                            year_value,
+                            asset_clean,
+                            parsed,
+                        )
+                        parsed = None
+                        break
         if not parsed:
             # Don't send messages in validation - let the form handle prompting
             # Just return None if dates are required but not found
@@ -2516,6 +3298,73 @@ class ActionRunReport(Action):
     def name(self) -> Text:
         return "action_run_report"
 
+    async def _route_to_textual_fleet(
+        self,
+        dispatcher: CollectingDispatcher,
+        tracker: Tracker,
+        user_text: str,
+        latest: Dict[Text, Any],
+    ) -> List[Dict[Text, Any]]:
+        """Route to textual fleet handler (MongoDB agent)."""
+        try:
+            entities = latest.get("entities") or []
+            asset_values = [
+                str(entity.get("value"))
+                for entity in entities
+                if entity.get("entity") == "asset" and entity.get("value")
+            ]
+            if not asset_values:
+                extracted_assets = extract_assets(user_text)
+                if extracted_assets:
+                    asset_values = extracted_assets
+            plate_number = asset_values[0] if asset_values else None
+            asset_id = None
+            if plate_number:
+                asset_id = get_asset_id_by_plate(plate_number)
+            agent_response = call_mongo_agent(
+                user_query=user_text,
+                asset_id=asset_id,
+                plate_number=plate_number
+            )
+            if "error" in agent_response:
+                answer = agent_response.get("answer") or agent_response.get("error", "I encountered an error while processing your query.")
+                dispatcher.utter_message(text=answer)
+            elif "answer" in agent_response:
+                dispatcher.utter_message(text=agent_response["answer"])
+            else:
+                response_text = json.dumps(agent_response, indent=2, default=str)
+                dispatcher.utter_message(text=f"Here is the information:\n{response_text}")
+            # Deactivate form and clear all form-related slots for fresh start
+            logger.info("_route_to_textual_fleet: Clearing form slots and deactivating form")
+            return [
+                ActiveLoop(None),
+                SlotSet("report_type", None),
+                SlotSet("assets", None),
+                SlotSet("date_range", None),
+                SlotSet("start_date", None),
+                SlotSet("end_date", None),
+                SlotSet("driver", None),
+                SlotSet("assets_display", None),
+                SlotSet("confirmed_assets", None),
+                SlotSet("confirmed_assets_display", None),
+            ]
+        except Exception as exc:
+            logger.error("Error routing to MongoDB agent: %s", exc, exc_info=True)
+            dispatcher.utter_message(text="I encountered an error while processing your query. Please try again.")
+            # Clear slots even on error to prevent stale state
+            return [
+                ActiveLoop(None),
+                SlotSet("report_type", None),
+                SlotSet("assets", None),
+                SlotSet("date_range", None),
+                SlotSet("start_date", None),
+                SlotSet("end_date", None),
+                SlotSet("driver", None),
+                SlotSet("assets_display", None),
+                SlotSet("confirmed_assets", None),
+                SlotSet("confirmed_assets_display", None),
+            ]
+
     async def run(
         self,
         dispatcher: CollectingDispatcher,
@@ -2525,52 +3374,39 @@ class ActionRunReport(Action):
         # Normalize input spaces BEFORE any processing
         normalize_input(tracker)
         
-        # Check if the user's message contains "report" - if not, this might be misclassified
-        # and should go to MongoDB agent instead
+        # Check if this is a textual fleet query - if so, route to MongoDB agent and exit
         latest = tracker.latest_message or {}
         user_text = latest.get("text") or ""
         latest_intent = latest.get("intent", {}).get("name", "")
         
-        # If intent is a report intent but text doesn't contain "report", it might be misclassified
-        # Route to MongoDB agent for textual fleet queries
+        # Check if intent is request_fleet_info
+        if latest_intent == "request_fleet_info":
+            logger.info("ActionRunReport: Detected request_fleet_info intent, routing to textual fleet handler")
+            return await self._route_to_textual_fleet(dispatcher, tracker, user_text, latest)
+        
+        # Check if intent is a report intent but text doesn't contain "report", it might be misclassified
         if latest_intent.startswith("request_") and latest_intent.endswith("_report"):
             if user_text and "report" not in user_text.lower():
-                logger.warning(f"Report intent detected but no 'report' word in text. Routing to MongoDB agent. Intent: {latest_intent}, Text: {user_text}")
-                # This is likely a textual fleet query, route to MongoDB agent
-                # Call the MongoDB agent directly
-                try:
-                    entities = latest.get("entities") or []
-                    asset_values = [
-                        str(entity.get("value"))
-                        for entity in entities
-                        if entity.get("entity") == "asset" and entity.get("value")
-                    ]
-                    if not asset_values:
-                        extracted_assets = extract_assets(user_text)
-                        if extracted_assets:
-                            asset_values = extracted_assets
-                    plate_number = asset_values[0] if asset_values else None
-                    asset_id = None
-                    if plate_number:
-                        asset_id = get_asset_id_by_plate(plate_number)
-                    agent_response = call_mongo_agent(
-                        user_query=user_text,
-                        asset_id=asset_id,
-                        plate_number=plate_number
-                    )
-                    if "error" in agent_response:
-                        answer = agent_response.get("answer") or agent_response.get("error", "I encountered an error while processing your query.")
-                        dispatcher.utter_message(text=answer)
-                    elif "answer" in agent_response:
-                        dispatcher.utter_message(text=agent_response["answer"])
-                    else:
-                        response_text = json.dumps(agent_response, indent=2, default=str)
-                        dispatcher.utter_message(text=f"Here is the information:\n{response_text}")
-                    return []
-                except Exception as exc:
-                    logger.error("Error routing to MongoDB agent: %s", exc, exc_info=True)
-                    dispatcher.utter_message(text="I encountered an error while processing your query. Please try again.")
-                    return []
+                logger.warning(f"ActionRunReport: Report intent detected but no 'report' word in text. Routing to MongoDB agent. Intent: {latest_intent}, Text: {user_text}")
+                return await self._route_to_textual_fleet(dispatcher, tracker, user_text, latest)
+        
+        # Also check text patterns for textual fleet queries
+        text_lower = user_text.lower() if user_text else ""
+        textual_patterns = [
+            "current location", "where is", "location of", "what is the location",
+            "driver name", "name of driver", "who is the driver",
+            "tell me", "show me", "give me",
+            "engine status", "battery voltage", "speed", "distance",
+            "idle", "moving", "gps location", "last location",
+            "which device", "what device", "highest speed", "total distance"
+        ]
+        has_textual_pattern = any(pattern in text_lower for pattern in textual_patterns)
+        has_report_word = any(word in text_lower for word in ["report", "reports", "reporting"])
+        
+        # If it has textual patterns but no report words, route to textual fleet
+        if has_textual_pattern and not has_report_word:
+            logger.info("ActionRunReport: Detected textual fleet query by text pattern, routing to MongoDB agent. Text: %r", user_text)
+            return await self._route_to_textual_fleet(dispatcher, tracker, user_text, latest)
         
         report_type = tracker.get_slot("report_type")
         assets_slot = tracker.get_slot("assets")
@@ -2584,7 +3420,8 @@ class ActionRunReport(Action):
         dates_required = report_spec.get("requires_dates", False)
 
         # If there is no report context at all (no type, no assets, no dates),
-        # treat this as a stray call and simply prompt the user instead of showing an error.
+        # treat this as a stray call (e.g. after a fresh greeting) and simply
+        # prompt the user instead of showing an error.
         if not report_type and not assets and not start_date and not end_date:
             dispatcher.utter_message(
                 text=(
@@ -2751,7 +3588,7 @@ class ActionRunReport(Action):
             else:
                 preview = serialized
             dispatcher.utter_message(
-                text=f"Finished the {report_type}. Here is a preview of the raw data:\n{preview}"
+                text=f"{preview}"
             )
         else:
             messages.append("I could not fetch any data because no matching assets were found.")
@@ -2952,14 +3789,39 @@ class ActionHandleTextualFleet(Action):
                     text=f"Here is the information:\n{response_text}"
                 )
             
-            return []
+            # Clear all form-related slots and deactivate form to prevent stale state
+            logger.info("action_handle_textual_fleet: Clearing form slots and deactivating form")
+            return [
+                ActiveLoop(None),
+                SlotSet("report_type", None),
+                SlotSet("assets", None),
+                SlotSet("date_range", None),
+                SlotSet("start_date", None),
+                SlotSet("end_date", None),
+                SlotSet("driver", None),
+                SlotSet("assets_display", None),
+                SlotSet("confirmed_assets", None),
+                SlotSet("confirmed_assets_display", None),
+            ]
             
         except Exception as exc:
             logger.error("action_handle_textual_fleet: Error occurred: %s", exc, exc_info=True)
             dispatcher.utter_message(
                 text="I encountered an error while processing your query. Please try again."
             )
-            return []
+            # Clear slots even on error to prevent stale state
+            return [
+                ActiveLoop(None),
+                SlotSet("report_type", None),
+                SlotSet("assets", None),
+                SlotSet("date_range", None),
+                SlotSet("start_date", None),
+                SlotSet("end_date", None),
+                SlotSet("driver", None),
+                SlotSet("assets_display", None),
+                SlotSet("confirmed_assets", None),
+                SlotSet("confirmed_assets_display", None),
+            ]
 
 
 class ActionPromptReportType(Action):
@@ -2984,8 +3846,8 @@ class ActionPromptReportType(Action):
             text = latest.get("text") or ""
             latest_intent = latest.get("intent", {}).get("name", "")
             
-            # Skip system intents (request_fleet_info)
-            system_intents = {"request_fleet_info"}
+            # Skip system intents (greet, goodbye, bot_challenge, out_of_scope, request_fleet_info)
+            system_intents = {"greet", "goodbye", "bot_challenge", "out_of_scope", "request_fleet_info"}
             if latest_intent in system_intents:
                 return []
             
@@ -3113,6 +3975,18 @@ class ActionPromptReportType(Action):
             # Log detection results
             logger.info(f"action_prompt_report_type: text='{text}', has_asset={has_asset}, has_date={has_date}, has_report_type_entity={has_report_type_entity}, has_report_type_slot={has_report_type_slot}, is_report_intent={is_report_intent}, is_providing_report_type={is_providing_report_type}")
             
+            # FIRST: Check if intent is request_report_list but text contains a specific report name
+            # This handles cases where "utilization report" is misclassified as request_report_list
+            # We should extract the report type and activate the form instead of showing the list
+            if latest_intent == "request_report_list" and text_lower:
+                normalised_report_type = normalise_report_type(text)
+                if normalised_report_type:
+                    logger.info(f"action_prompt_report_type: Intent is request_report_list but detected specific report type '{normalised_report_type}' from text '{text}'. Activating form instead of showing list.")
+                    return [
+                        SlotSet("report_type", normalised_report_type),
+                        ActiveLoop("report_form"),
+                    ]
+            
             # Check if text contains "report" word - if so, it's likely a report request
             # This handles cases like "temperature report" that might not be classified correctly
             if text_lower and "report" in text_lower:
@@ -3133,7 +4007,7 @@ class ActionPromptReportType(Action):
                     logger.info(f"action_prompt_report_type: Detected report request (contains 'report') but couldn't extract type. Intent: {latest_intent}, Text: {text}")
                     # Prompt user to select a report type
                     dispatcher.utter_message(
-                        response="utter_ask_report_form_report_type"
+                        response="utter_list_reports"
                     )
                     return [ActiveLoop(None)]
             
@@ -3142,20 +4016,20 @@ class ActionPromptReportType(Action):
             if (has_asset or has_date) and not has_report_type_entity and not is_report_intent and not is_providing_report_type:
                 logger.info("action_prompt_report_type: Prompting user for report type")
                 dispatcher.utter_message(
-                    response="utter_ask_report_form_report_type"
+                    response="utter_list_reports"
                 )
                 # Explicitly ensure form is not activated
                 return [ActiveLoop(None)]
             else:
                 logger.info("action_prompt_report_type: Not prompting (conditions not met)")
-                # If we can't handle this query, ask for clarification
+                # IMPORTANT: If we can't handle this query, trigger out_of_scope action
+                # This ensures the bot always responds instead of appearing stuck
                 if text and text.strip():
-                    logger.warning(f"action_prompt_report_type: Cannot handle query: '{text}', intent: '{latest_intent}'. Asking for clarification.")
+                    logger.warning(f"action_prompt_report_type: Cannot handle query: '{text}', intent: '{latest_intent}'. Triggering out_of_scope.")
+                    # Trigger out_of_scope response to handle unrecognized queries
                     dispatcher.utter_message(
-                        text="I can help you with fleet reports and fleet information. Please specify what you need - for example, 'trips report for vehicle 390' or 'what is the location of vehicle 390?'"
+                        response="utter_out_of_scope"
                     )
                     return []
         
         return []
-
-

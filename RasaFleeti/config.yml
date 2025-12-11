@@ -10,9 +10,9 @@ pipeline:
   - name: CountVectorsFeaturizer
     analyzer: char_wb
     min_ngram: 1
-    max_ngram: 4
+    max_ngram: 6
   - name: DIETClassifier
-    epochs: 120
+    epochs: 200
     constrain_similarities: true
   - name: EntitySynonymMapper
   - name: RegexEntityExtractor
@@ -22,7 +22,7 @@ pipeline:
     use_word_boundaries: true
     entity_types: ["asset"]
   - name: FallbackClassifier
-    threshold: 0.3
+    threshold: 0.4
     ambiguity_threshold: 0.1
 
 policies:
@@ -30,5 +30,5 @@ policies:
   - name: RulePolicy
   - name: TEDPolicy
     max_history: 5
-    epochs: 75
+    epochs: 125
     constrain_similarities: true

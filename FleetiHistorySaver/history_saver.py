@@ -20,12 +20,13 @@ class FleetiHistorySaver:
     One document per session, with messages array.
     """
     
-    def __init__(self, session_id: str = "default_session"):
+    def __init__(self, session_id: str = "default_session", sub_tenant_id: str = ""):
         """
         Initialize the history saver.
         
         Args:
             session_id: Session ID (hardcoded for now, will be dynamic later)
+            sub_tenant_id: Sub-tenant ID to associate with this session
         """
         mongo_uri = os.getenv("MONGO_URI")
         mongo_db = os.getenv("MONGO_DB")
@@ -36,6 +37,7 @@ class FleetiHistorySaver:
         self.client = MongoClient(mongo_uri)
         self.db = self.client[mongo_db]
         self.session_id = session_id
+        self.sub_tenant_id = sub_tenant_id
         self.collection_name = "FleetiMessages"
         
         # Ensure collection exists
@@ -139,6 +141,7 @@ class FleetiHistorySaver:
         """
         Append a message to the session document in MongoDB.
         Creates document if it doesn't exist, appends to messages array if it does.
+        Sets sub_tenant_id when creating a new session document.
         
         Args:
             message: Message dictionary to append
@@ -150,6 +153,7 @@ class FleetiHistorySaver:
                 "$push": {"messages": message},
                 "$setOnInsert": {
                     "sessionId": self.session_id,
+                    "sub_tenant_id": self.sub_tenant_id,
                     "created_at": datetime.now(timezone.utc)
                 }
             },
@@ -157,7 +161,7 @@ class FleetiHistorySaver:
         )
         
         if result.upserted_id:
-            print(f"Created new session document for sessionId: {self.session_id}")
+            print(f"Created new session document for sessionId: {self.session_id} with sub_tenant_id: {self.sub_tenant_id}")
         else:
             print(f"Appended message to existing session: {self.session_id}")
     

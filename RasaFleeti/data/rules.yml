@@ -1,6 +1,11 @@
 version: "3.1"
 
 rules:
+- rule: list available reports
+  steps:
+  - intent: request_report_list
+  - action: utter_list_reports
+
 - rule: prompt report type when provide_report_detail without form
   condition:
   - active_loop: null
@@ -40,7 +45,7 @@ rules:
 
 - rule: start fleet performance report form
   steps:
-  - intent: request_fleet_performance_report
+  - intent: request_fleet_performance_summary_report
   - action: report_form
   - active_loop: report_form
 
@@ -58,13 +63,13 @@ rules:
 
 - rule: start idle time report form
   steps:
-  - intent: request_idle_report
+  - intent: request_idle_time_report
   - action: report_form
   - active_loop: report_form
 
 - rule: start stop time report form
   steps:
-  - intent: request_stop_report
+  - intent: request_stop_time_report
   - action: report_form
   - active_loop: report_form
 
@@ -130,10 +135,48 @@ rules:
   - active_loop: null
   - action: action_run_report
 
+- rule: greet user
+  condition:
+  - active_loop: null
+  steps:
+  - intent: greet
+  - action: utter_greet
+
+- rule: greet user and deactivate form
+  condition:
+  - active_loop: report_form
+  steps:
+  - intent: greet
+  - action: utter_greet
+  - active_loop: null
+
+- rule: reset on goodbye
+  steps:
+  - intent: goodbye
+  - action: utter_goodbye
+
+- rule: bot challenge
+  steps:
+  - intent: bot_challenge
+  - action: utter_iamabot
+
 - rule: handle textual fleet query
   steps:
   - intent: request_fleet_info
   - action: action_handle_textual_fleet
+
+- rule: handle textual fleet query and exit form
+  condition:
+  - active_loop: report_form
+  steps:
+  - intent: request_fleet_info
+  - active_loop: null
+  - action: action_handle_textual_fleet
+
+- rule: out of scope
+  steps:
+  - intent: out_of_scope
+  - action: utter_out_of_scope
 
 - rule: check for asset or date without report type (catch-all fallback)
   condition:
