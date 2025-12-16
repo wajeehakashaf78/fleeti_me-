@@ -102,7 +102,7 @@ Your tasks:
 3. RESPONSE: Generate an appropriate response
    - If classification is "general conversation": Provide a friendly, contextually appropriate response as a fleet assistant
    - If classification is "fleet": Leave empty
-   - If the message is nonsensical or doesn't make sense (with or without history): Respond with "I do not understand..."
+   - If the message is nonsensical or doesn't make sense (with or without history): Respond with something like I'm not sure how to help with that. I can help you with your own fleet related questions.
 
 CRITICAL RULES:
 - Preserve the user's intent; do not rewrite into an answer

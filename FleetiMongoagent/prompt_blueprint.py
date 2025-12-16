@@ -50,7 +50,7 @@ SUB-TENANT FILTERING FOR COLLECTIONS WITHOUT sub_tenant_id:
 
 PLATE NUMBER QUERIES:
 - ALWAYS match on Asset.details.plate_number (NOT asset_id, NOT _id)
-- Plate numbers can be numeric (e.g., "243") or alphanumeric (e.g., "123 ABC", "ABC-123")
+- Plate numbers can be numeric (e.g., "243") or alphanumeric (e.g., "123 ABC", "ABC-123") etc.
 - Use case-insensitive regex for exact match: {"$regex": "^PLATE_NUMBER$", "$options": "i"}
 - Example for plate "243": {"$match": {"sub_tenant_id": "sub_tenant_id", "details.plate_number": {"$regex": "^243$", "$options": "i"}}}
 - Example for plate "123 ABC": {"$match": {"sub_tenant_id": "sub_tenant_id", "details.plate_number": {"$regex": "^123 ABC$", "$options": "i"}}}

@@ -1,7 +1,6 @@
 # ORCHISTRATOR
 import time
 import requests
-import json
 
 from ConversationClassifier.conversation_classifier import ConversationClassifier
 # Initialize classifier

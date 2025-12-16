@@ -433,23 +433,6 @@
 
 ---
 
-## Driver_analytics
-
-**Description:** Contains performance analytics and quantitative metrics for driver performance evaluation. Includes total miles driven, total hours worked/duty time, efficiency ratings, driving scores, safety scores, productivity metrics, and overall performance indicators.
-
-**Use for questions about:**
-- Driver performance metrics
-- Driver analytics
-- Total miles driven
-- Driver efficiency
-- Driver scores
-- Performance indicators
-- Driver statistics
-
-**Key Keywords:** driver analytics, performance metrics, driver score, efficiency, total miles, driver statistics
-
----
-
 ## Driver_asset_assignments
 
 **Description:** Manages relationships between drivers and vehicles they are assigned to operate. Includes assignment history (past/current), assigned vehicle IDs/names, assignment start/end dates, assignment status (active, completed, transferred), assignment type, priority levels, assignment notes, assigned by information, responsibilities, access levels, notification preferences, and schedule information.
@@ -501,7 +484,7 @@
 
 ---
 
-## Driver_driver_analytics
+## Driver_analytics
 
 **Description:** Contains additional advanced driver performance metrics and behavioral analysis beyond basic analytics. Includes detailed performance breakdowns, advanced behavioral metrics, sophisticated analytics calculations, and in-depth performance tracking data.
 
@@ -511,8 +494,15 @@
 - Advanced behavioral analysis
 - Sophisticated analytics
 - In-depth performance tracking
+- Driver performance metrics
+- Driver analytics
+- Total miles driven
+- Driver efficiency
+- Driver scores
+- Performance indicators
+- Driver statistics
 
-**Key Keywords:** advanced analytics, detailed metrics, performance breakdown, sophisticated analytics
+**Key Keywords:** advanced analytics, detailed metrics, performance breakdown, sophisticated analytics, driver analytics, performance metrics, driver score, efficiency, total miles, driver statistics
 
 ---
 

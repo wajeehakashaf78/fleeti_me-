@@ -38,7 +38,7 @@ AUTHORIZATION = (
     "Bearer "
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJodHRwOi8vc2NoZW1hcy54bWxzb2FwLm9yZy93cy8yMDA1LzA1L2lkZW50aXR5L2NsYWltcy9uYW1laWRlbnRpZmllciI6ImZiODM1ZWJkLTkyOTktNGRhNC04Y2IxLTllY2VhM2E5YzVkNyIsImh0dHA6Ly9zY2hlbWFzLnhtbHNvYXAub3JnL3dzLzIwMDUvMDUvaWRlbnRpdHkvY2xhaW1zL2VtYWlsYWRkcmVzcyI6Imsuc2hhZmlxdWVAdHJhY2tpaW5nLm1lIiwiaHR0cDovL3NjaGVtYXMueG1sc29hcC5vcmcvd3MvMjAwNS8wNS9pZGVudGl0eS9jbGFpbXMvbmFtZSI6IkRldlRlc3QiLCJTZWN1cml0eVN0YW1wIjoiQU5GNTQ1M0tPT0tJWVVWRTNVTUk0TkJFRkJNQlVNS1giLCJodHRwOi8vc2NoZW1hcy5taWNyb3NvZnQuY29tL3dzLzIwMDgvMDYvaWRlbnRpdHkvY2xhaW1zL3JvbGUiOiJBZG1pbiIsImV4cCI6MTc2NjIyODA5MiwiaXNzIjoiaHR0cHM6Ly9sb2NhbGhvc3Q6NzA0Ni8iLCJhdWQiOiJodHRwOi8vbG9jYWxob3N0OjMwMDAvIn0.5UvG39caaJN6rCuf4GSk-7RB08_sqKWJi5vNVFUWzlo"
 )
-MONGO_URI = "mongodb://wajeeha:Start123987%2B@10.190.9.35:27017/?directConnection=true"
+MONGO_URI = "mongodb://nida:Start123987%2B@10.190.9.35:27017/?directConnection=true"
 MONGO_DB = "dev-test"
 MONGO_COLLECTION = "Asset"
 SUB_TENANT_ID = ""
@@ -1017,7 +1017,7 @@ def parse_date_range(text: Optional[Text]) -> Optional[Dict[str, Text]]:
     # Explicit "year 2023 to year 2025" style ranges. These should expand to the
     # full calendar years for the start and end years.
     year_range_match = re.search(
-        r"year\s+(\d{4})\s*(?:to|-|and)\s*year\s+(\d{4})",
+        r"(?:for\s+)?(?:the\s+)?year\s+(\d{4})\s*(?:to|-|and)\s*(?:the\s+)?year\s+(\d{4})",
         lowered,
     )
     if year_range_match:
@@ -1028,6 +1028,36 @@ def parse_date_range(text: Optional[Text]) -> Optional[Dict[str, Text]]:
         start = date(start_year, 1, 1)
         end = date(end_year, 12, 31)
         return {"start": start.isoformat(), "end": end.isoformat(), "summary": working}
+    
+    # Check for "last year" BEFORE single year expressions to prioritize relative time
+    # Plain "last year" (no explicit year number) -> previous calendar year.
+    # Also handle "for the last year" or "of the last year"
+    if "last year" in lowered:
+        # Check if there's an explicit year phrase that might conflict (e.g., "for the year 2025")
+        # But prioritize "last year" phrase if it appears clearly
+        has_explicit_year_phrase = bool(re.search(r'(?:for\s+)?(?:the\s+)?year\s+\d{4}', lowered))
+        
+        # If "last year" appears without a conflicting explicit year phrase, use previous year
+        # Also handle cases where user says "for the last year" or "of the last year"
+        if not has_explicit_year_phrase or "for the last year" in lowered or "of the last year" in lowered:
+            y = today.year - 1
+            first_day = date(y, 1, 1)
+            last_day = date(y, 12, 31)
+            return {"start": first_day.isoformat(), "end": last_day.isoformat()}
+    
+    # Handle single year expressions like "for the year 2025", "year 2024", "2024"
+    # This comes after "last year" check to avoid conflicts
+    single_year_match = re.search(
+        r"(?:for\s+)?(?:the\s+)?year\s+(\d{4})\b",
+        lowered,
+    )
+    if single_year_match:
+        year_val = int(single_year_match.group(1))
+        # Only process if it's a reasonable year (1900-2100)
+        if 1900 <= year_val <= 2100:
+            start = date(year_val, 1, 1)
+            end = date(year_val, 12, 31)
+            return {"start": start.isoformat(), "end": end.isoformat(), "summary": working}
 
     # Special handling for common relative phrases so that we return meaningful
     # ranges instead of a single guessed day.
@@ -1071,13 +1101,6 @@ def parse_date_range(text: Optional[Text]) -> Optional[Dict[str, Text]]:
     if "this year" in lowered or ("this" in lowered and "whole year" in lowered and not any(ch.isdigit() for ch in lowered)):
         first_day = date(today.year, 1, 1)
         return {"start": first_day.isoformat(), "end": today.isoformat()}
-
-    # Plain "last year" (no explicit year number) -> previous calendar year.
-    if "last year" in lowered and not any(ch.isdigit() for ch in lowered):
-        y = today.year - 1
-        first_day = date(y, 1, 1)
-        last_day = date(y, 12, 31)
-        return {"start": first_day.isoformat(), "end": last_day.isoformat()}
 
     # "last 6 months" (or "last six months"): previous six full calendar months,
     # ending with the month before the current one.
@@ -2107,7 +2130,33 @@ class ValidateReportForm(FormValidationAction):
         if not text:
             return False
         
-        # Textual fleet query patterns (questions about vehicle info, not reports)
+        # GENERAL APPROACH: If the text contains question words or action verbs AND is about fleet/vehicles,
+        # AND does NOT contain "report", treat it as a textual fleet query
+        question_words = ['what', 'where', 'when', 'who', 'why', 'how', 'which', 'is', 'are', 'was', 'were']
+        action_verbs = ['show', 'list', 'get', 'tell', 'give', 'find', 'display', 'retrieve', 'fetch', 
+                       'check', 'see', 'view', 'look', 'search']
+        fleet_keywords = ['driver', 'vehicle', 'car', 'truck', 'bus', 'fleet', 'location', 'speed', 
+                         'distance', 'status', 'engine', 'battery', 'gps', 'device', 'plate', 'asset',
+                         'name', 'who', 'what', 'where']  # Added common question words that are also fleet-related
+        
+        has_question_word = any(word in text for word in question_words)
+        has_action_verb = any(verb in text for verb in action_verbs)
+        has_fleet_keyword = any(keyword in text for keyword in fleet_keywords)
+        has_report_word = any(word in text for word in ["report", "reports", "reporting"])
+        
+        # If it's a question/action about fleet/vehicles and NOT a report request, it's a textual fleet query
+        if (has_question_word or has_action_verb) and has_fleet_keyword and not has_report_word:
+            logger.info("_is_textual_fleet_query: Detected textual fleet query. Text: %r", text)
+            return True
+        
+        # Also check: if text contains fleet keywords and question structure (even without explicit question words),
+        # and no report word, treat as textual fleet query
+        # This catches queries like "driver name of 390" which might not have explicit question words
+        if has_fleet_keyword and not has_report_word and (has_question_word or has_action_verb or "of" in text or "for" in text):
+            logger.info("_is_textual_fleet_query: Detected textual fleet query (fleet keyword + structure). Text: %r", text)
+            return True
+        
+        # Also check for specific textual patterns (backward compatibility)
         textual_patterns = [
             "current location", "where is", "location of", "what is the location",
             "driver name", "name of driver", "who is the driver",
@@ -2116,12 +2165,8 @@ class ValidateReportForm(FormValidationAction):
             "idle", "moving", "gps location", "last location",
             "which device", "what device", "highest speed", "total distance"
         ]
-        
-        # Check if text contains textual patterns but NOT report-related words
         has_textual_pattern = any(pattern in text for pattern in textual_patterns)
-        has_report_word = any(word in text for word in ["report", "reports", "reporting"])
         
-        # If it has textual patterns but no report words, it's likely a textual fleet query
         if has_textual_pattern and not has_report_word:
             logger.info("_is_textual_fleet_query: Detected textual fleet query by text pattern. Text: %r", text)
             return True
@@ -2416,16 +2461,36 @@ class ValidateReportForm(FormValidationAction):
                 if date_text:
                     # CRITICAL: Check if the text is actually a report name before parsing as date
                     # This prevents "work hour report" from being parsed as a date when user repeats report name
+                    # However, if the text contains BOTH a report name AND date content, we should still try to extract the date
                     text_lower = date_text.lower().strip()
                     potential_report_type = normalise_report_type(text_lower)
-                    if potential_report_type and potential_report_type != normalised:
-                        # The text contains a different report name, don't parse as date
+                    
+                    # Check if text contains date-like patterns (months, years, dates, relative time expressions)
+                    date_indicators = [
+                        r'\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec|january|february|march|april|june|july|august|september|october|november|december)\b',
+                        r'\b\d{1,2}[/\-\.]\d{1,2}[/\-\.]\d{2,4}\b',  # Date patterns like 01/01/2025
+                        r'\b\d{4}\b',  # Year
+                        r'\b(this|last|next)\s+(month|year|week|day|quarter)\b',  # Relative time
+                        r'\b(today|yesterday|tomorrow)\b',
+                        r'\b(month|year|week|day)\s+of\b',  # "month of September"
+                    ]
+                    has_date_indicators = any(re.search(pattern, text_lower, re.IGNORECASE) for pattern in date_indicators)
+                    has_date_entities = bool(date_values)
+                    
+                    if potential_report_type and potential_report_type != normalised and not has_date_indicators and not has_date_entities:
+                        # The text contains a different report name with no date content, don't parse as date
                         logger.info(
-                            "validate_report_type: Text '%s' contains report name '%s', skipping date parsing",
+                            "validate_report_type: Text '%s' contains different report name '%s' with no date content, skipping date parsing",
                             date_text,
                             potential_report_type,
                         )
                     else:
+                        if potential_report_type and potential_report_type != normalised and (has_date_indicators or has_date_entities):
+                            logger.info(
+                                "validate_report_type: Text '%s' contains different report name '%s' but also has date content, attempting date parsing",
+                                date_text,
+                                potential_report_type,
+                            )
                         logger.info(
                             "validate_report_type: STEP 3 - parsing date from filtered text. date_values=%r text=%r",
                             date_values,
@@ -2530,16 +2595,36 @@ class ValidateReportForm(FormValidationAction):
                 if date_text:
                     # CRITICAL: Check if the text is actually a report name before parsing as date
                     # This prevents "work hour report" from being parsed as a date when user repeats report name
+                    # However, if the text contains BOTH a report name AND date content, we should still try to extract the date
                     text_lower = date_text.lower().strip()
                     potential_report_type = normalise_report_type(text_lower)
-                    if potential_report_type and potential_report_type != normalised:
-                        # The text contains a different report name, don't parse as date
+                    
+                    # Check if text contains date-like patterns (months, years, dates, relative time expressions)
+                    date_indicators = [
+                        r'\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec|january|february|march|april|june|july|august|september|october|november|december)\b',
+                        r'\b\d{1,2}[/\-\.]\d{1,2}[/\-\.]\d{2,4}\b',  # Date patterns like 01/01/2025
+                        r'\b\d{4}\b',  # Year
+                        r'\b(this|last|next)\s+(month|year|week|day|quarter)\b',  # Relative time
+                        r'\b(today|yesterday|tomorrow)\b',
+                        r'\b(month|year|week|day)\s+of\b',  # "month of September"
+                    ]
+                    has_date_indicators = any(re.search(pattern, text_lower, re.IGNORECASE) for pattern in date_indicators)
+                    has_date_entities = bool(date_values)
+                    
+                    if potential_report_type and potential_report_type != normalised and not has_date_indicators and not has_date_entities:
+                        # The text contains a different report name with no date content, don't parse as date
                         logger.info(
-                            "validate_report_type: Text '%s' contains report name '%s', skipping date parsing",
+                            "validate_report_type: Text '%s' contains different report name '%s' with no date content, skipping date parsing",
                             date_text,
                             potential_report_type,
                         )
                     else:
+                        if potential_report_type and potential_report_type != normalised and (has_date_indicators or has_date_entities):
+                            logger.info(
+                                "validate_report_type: Text '%s' contains different report name '%s' but also has date content, attempting date parsing",
+                                date_text,
+                                potential_report_type,
+                            )
                         logger.info(
                             "validate_report_type: STEP 3 - parsing date from filtered text. date_values=%r text=%r",
                             date_values,
@@ -3071,18 +3156,42 @@ class ValidateReportForm(FormValidationAction):
         
         # CRITICAL: Check if the text is actually a report name before parsing as date
         # This prevents "work hour report" from being parsed as a date when user repeats report name
+        # However, if the text contains BOTH a report name AND date content, we should still try to extract the date
         parsed = None
         if text_for_date_parsing:
             text_lower = text_for_date_parsing.lower().strip()
             potential_report_type = normalise_report_type(text_lower)
-            if potential_report_type:
-                # The text contains a report name, don't parse as date
+            
+            # Check if text contains date-like patterns (months, years, dates, relative time expressions)
+            date_indicators = [
+                r'\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec|january|february|march|april|june|july|august|september|october|november|december)\b',
+                r'\b\d{1,2}[/\-\.]\d{1,2}[/\-\.]\d{2,4}\b',  # Date patterns like 01/01/2025
+                r'\b\d{4}\b',  # Year
+                r'\b(this|last|next)\s+(month|year|week|day|quarter)\b',  # Relative time
+                r'\b(today|yesterday|tomorrow)\b',
+                r'\b(month|year|week|day)\s+of\b',  # "month of September"
+            ]
+            has_date_indicators = any(re.search(pattern, text_lower, re.IGNORECASE) for pattern in date_indicators)
+            
+            # Also check for date entities
+            entities = latest.get("entities") or []
+            has_date_entities = any(entity.get("entity") == "date" for entity in entities)
+            
+            if potential_report_type and not has_date_indicators and not has_date_entities:
+                # The text is ONLY a report name with no date content, don't parse as date
                 logger.info(
-                    "validate_date_range: Text '%s' contains report name '%s', skipping date parsing",
+                    "validate_date_range: Text '%s' is only a report name '%s' with no date content, skipping date parsing",
                     text_for_date_parsing,
                     potential_report_type,
                 )
             else:
+                # Text contains date content (even if it also has a report name), try to parse it
+                if potential_report_type and (has_date_indicators or has_date_entities):
+                    logger.info(
+                        "validate_date_range: Text '%s' contains both report name '%s' and date content, attempting date parsing",
+                        text_for_date_parsing,
+                        potential_report_type,
+                    )
                 parsed = parse_date_range(text_for_date_parsing)
                 # If parsed date is a single day but the input was just a month name, expand to full month
                 # Check date entities first (they contain the actual date values)
@@ -3390,8 +3499,38 @@ class ActionRunReport(Action):
                 logger.warning(f"ActionRunReport: Report intent detected but no 'report' word in text. Routing to MongoDB agent. Intent: {latest_intent}, Text: {user_text}")
                 return await self._route_to_textual_fleet(dispatcher, tracker, user_text, latest)
         
-        # Also check text patterns for textual fleet queries
+        # Also check text patterns for textual fleet queries - use general approach
         text_lower = user_text.lower() if user_text else ""
+        
+        # GENERAL APPROACH: If text contains question words or action verbs AND fleet keywords,
+        # AND does NOT contain "report", treat it as a textual fleet query
+        # Be more permissive - if it has question words AND fleet keywords, it's likely a textual fleet query
+        question_words = ['what', 'where', 'when', 'who', 'why', 'how', 'which', 'is', 'are', 'was', 'were']
+        action_verbs = ['show', 'list', 'get', 'tell', 'give', 'find', 'display', 'retrieve', 'fetch', 
+                       'check', 'see', 'view', 'look', 'search']
+        fleet_keywords = ['driver', 'vehicle', 'car', 'truck', 'bus', 'fleet', 'location', 'speed', 
+                         'distance', 'status', 'engine', 'battery', 'gps', 'device', 'plate', 'asset',
+                         'name', 'who', 'what', 'where']  # Added common question words that are also fleet-related
+        
+        has_question_word = any(word in text_lower for word in question_words)
+        has_action_verb = any(verb in text_lower for verb in action_verbs)
+        has_fleet_keyword = any(keyword in text_lower for keyword in fleet_keywords)
+        has_report_word = any(word in text_lower for word in ["report", "reports", "reporting"])
+        
+        # If it's a question/action about fleet/vehicles and NOT a report request, route to textual fleet
+        # Be more permissive: if it has (question word OR action verb) AND fleet keyword, treat as textual fleet
+        if (has_question_word or has_action_verb) and has_fleet_keyword and not has_report_word:
+            logger.info("ActionRunReport: Detected textual fleet query, routing to MongoDB agent. Text: %r", user_text)
+            return await self._route_to_textual_fleet(dispatcher, tracker, user_text, latest)
+        
+        # Also check: if text contains fleet keywords and question structure (even without explicit question words),
+        # and no report word, treat as textual fleet query
+        # This catches queries like "driver name of 390" which might not have explicit question words
+        if has_fleet_keyword and not has_report_word and (has_question_word or has_action_verb or "of" in text_lower or "for" in text_lower):
+            logger.info("ActionRunReport: Detected textual fleet query (fleet keyword + structure), routing to MongoDB agent. Text: %r", user_text)
+            return await self._route_to_textual_fleet(dispatcher, tracker, user_text, latest)
+        
+        # Also check for specific textual patterns (backward compatibility)
         textual_patterns = [
             "current location", "where is", "location of", "what is the location",
             "driver name", "name of driver", "who is the driver",
@@ -3401,16 +3540,62 @@ class ActionRunReport(Action):
             "which device", "what device", "highest speed", "total distance"
         ]
         has_textual_pattern = any(pattern in text_lower for pattern in textual_patterns)
-        has_report_word = any(word in text_lower for word in ["report", "reports", "reporting"])
         
-        # If it has textual patterns but no report words, route to textual fleet
         if has_textual_pattern and not has_report_word:
             logger.info("ActionRunReport: Detected textual fleet query by text pattern, routing to MongoDB agent. Text: %r", user_text)
             return await self._route_to_textual_fleet(dispatcher, tracker, user_text, latest)
         
         report_type = tracker.get_slot("report_type")
         assets_slot = tracker.get_slot("assets")
-        assets = extract_assets(assets_slot)
+        
+        # CRITICAL: Validate that assets in slot actually appear in the current message
+        # This prevents using stale assets from previous interactions
+        latest = tracker.latest_message or {}
+        current_text = (latest.get("text") or "").lower()
+        assets = []
+        if assets_slot:
+            extracted_assets = extract_assets(assets_slot)
+            # Check if any extracted asset actually appears in the current message text
+            # This filters out stale assets from previous conversations
+            for asset in extracted_assets:
+                asset_lower = asset.lower().strip()
+                asset_upper = asset.upper().strip()
+                
+                # Skip obviously invalid assets (report names, common words)
+                invalid_asset_keywords = [
+                    "report", "humidity", "temperature", "climate", "environmental",
+                    "idle", "stop", "trip", "fuel", "odometer", "utilization",
+                    "summary", "performance", "behavior", "behaviour", "speed",
+                    "over", "speeding", "weight", "sensor", "command", "event",
+                    "raw", "data", "track", "fleet"
+                ]
+                # Check if asset is just a report type keyword (not a valid vehicle)
+                if any(keyword in asset_lower for keyword in invalid_asset_keywords):
+                    logger.warning(
+                        "ActionRunReport: Ignoring invalid asset '%s' (contains report keyword, not a vehicle)",
+                        asset
+                    )
+                    continue
+                
+                # Check if asset appears in current message (as whole word or part of a phrase)
+                # Also check if it's a valid vehicle pattern (numbers, alphanumeric like "390", "3688 FHD")
+                asset_in_text = asset_lower in current_text or \
+                               any(part in current_text for part in asset_lower.split() if len(part) >= 2)
+                
+                # Check if it's a valid vehicle pattern (alphanumeric, not just words)
+                is_valid_pattern = bool(re.match(r'^[A-Z0-9\s-]{2,}$', asset_upper)) and \
+                                  not asset_upper.isalpha()  # Must contain at least one number or be alphanumeric
+                
+                if asset_in_text or is_valid_pattern:
+                    assets.append(asset)
+                else:
+                    # Asset doesn't appear in current message and doesn't match vehicle pattern - it's stale data
+                    logger.warning(
+                        "ActionRunReport: Ignoring stale asset '%s' (not in current message: '%s' and not valid vehicle pattern)",
+                        asset,
+                        current_text
+                    )
+        
         driver_name = tracker.get_slot("driver")
         start_date = tracker.get_slot("start_date")
         end_date = tracker.get_slot("end_date") or start_date
@@ -3579,16 +3764,9 @@ class ActionRunReport(Action):
         messages: List[str] = []
         if results:
             serialized = json.dumps(results, indent=2, default=str)
-            # Protect against sending an overly large message to the channel, which can
-            # cause streaming errors like 'Chunk too big'. We keep a preview only.
-            max_len = 2000
-            if len(serialized) > max_len:
-                truncated_len = len(serialized) - max_len
-                preview = serialized[:max_len] + f"\n... (truncated, {truncated_len} characters omitted)"
-            else:
-                preview = serialized
+            # Return complete report data without any truncation
             dispatcher.utter_message(
-                text=f"{preview}"
+                text=f"{serialized}"
             )
         else:
             messages.append("I could not fetch any data because no matching assets were found.")
@@ -3630,37 +3808,7 @@ def call_mongo_agent(user_query: Text, asset_id: Optional[str] = None, plate_num
         Dictionary containing the agent's response or error information
     """
     try:
-        # TODO: Replace this with your actual MongoDB agent endpoint/function
-        # This is a placeholder that you should replace with your actual MongoDB agent implementation
-        
-        # Option 1: If you have a MongoDB agent API endpoint
-        # url = "YOUR_MONGODB_AGENT_ENDPOINT_URL"
-        # payload = {
-        #     "query": user_query,
-        #     "asset_id": asset_id,
-        #     "plate_number": plate_number,
-        #     "sub_tenant_id": SUB_TENANT_ID
-        # }
-        # headers = {
-        #     "Authorization": AUTHORIZATION,
-        #     "Content-Type": "application/json"
-        # }
-        # response = requests.post(url, json=payload, headers=headers, timeout=60)
-        # response.raise_for_status()
-        # return {
-        #     "status": response.status_code,
-        #     "body": response.json() if response.content else {},
-        #     "answer": response.json().get("answer") or response.json().get("response") or ""
-        # }
-        
-        # Option 2: If you have a direct MongoDB agent function/class
-        # from your_mongo_agent_module import MongoAgent
-        # agent = MongoAgent(MONGO_URI, MONGO_DB)
-        # answer = agent.query(user_query, asset_id=asset_id, plate_number=plate_number)
-        # return {
-        #     "status": 200,
-        #     "answer": answer
-        # }
+
         
         # Placeholder implementation - replace with your actual MongoDB agent call
         logger.info(f"Calling MongoDB agent with query: {user_query}, asset_id: {asset_id}, plate: {plate_number}")
@@ -3709,8 +3857,9 @@ class ActionHandleTextualFleet(Action):
                 )
                 return []
             
-            # CONFLICT RESOLUTION: Check if this is just a vehicle number/date without a meaningful question
-            # If so, let ActionPromptReportType handle it instead (to avoid conflict)
+            # GENERAL APPROACH: Process all queries that reach this action as textual fleet queries
+            # This action is only called when the query is already identified as a textual fleet query,
+            # so we should process it rather than skipping it
             user_query_lower = user_query.lower().strip()
             
             # Check if query contains question words or action verbs (indicating a textual fleet query)
@@ -3718,9 +3867,13 @@ class ActionHandleTextualFleet(Action):
                             'tell', 'give', 'find', 'display', 'retrieve', 'fetch', 'is', 'are', 'was', 'were']
             action_verbs = ['show', 'list', 'get', 'tell', 'give', 'find', 'display', 'retrieve', 'fetch', 
                           'check', 'see', 'view', 'look', 'search']
+            fleet_keywords = ['driver', 'vehicle', 'car', 'truck', 'bus', 'fleet', 'location', 'speed', 
+                            'distance', 'status', 'engine', 'battery', 'gps', 'device', 'plate', 'asset',
+                            'name', 'who', 'what', 'where']
             
             has_question_word = any(word in user_query_lower for word in question_words)
             has_action_verb = any(verb in user_query_lower for verb in action_verbs)
+            has_fleet_keyword = any(keyword in user_query_lower for keyword in fleet_keywords)
             
             # Extract assets and dates to check if query is just a vehicle/date
             entities = latest.get("entities") or []
@@ -3734,12 +3887,20 @@ class ActionHandleTextualFleet(Action):
             has_asset = has_asset_entity or bool(extracted_assets)
             has_date = has_date_entity or bool(parsed_date)
             
-            # If query is just a vehicle number/date without question/action words, it's not a textual fleet query
-            # Let ActionPromptReportType handle it instead
-            if (has_asset or has_date) and not has_question_word and not has_action_verb:
-                logger.info(f"action_handle_textual_fleet: Query is just vehicle/date without question. Skipping MongoDB agent. Query: {user_query}")
+            # GENERAL RULE: If query has question/action words OR fleet keywords, process it as textual fleet query
+            # Only skip if it's JUST a bare vehicle/date with NO question/action words AND NO fleet keywords AND NO structural indicators
+            structural_indicators = ['of', 'for', 'with', 'from', 'to']
+            has_structural_indicator = any(indicator in user_query_lower for indicator in structural_indicators)
+            
+            # Process the query if it has any of: question words, action verbs, fleet keywords, or structural indicators
+            # Only skip if it's truly just a bare vehicle/date with no context
+            if (has_asset or has_date) and not has_question_word and not has_action_verb and not has_fleet_keyword and not has_structural_indicator:
+                logger.info(f"action_handle_textual_fleet: Query is just vehicle/date without context. Skipping MongoDB agent. Query: {user_query}")
                 # Return empty to let other actions (like ActionPromptReportType) handle it
                 return []
+            
+            # Otherwise, process it as a textual fleet query
+            logger.info(f"action_handle_textual_fleet: Processing as textual fleet query. Query: {user_query}")
             
             # Extract asset/vehicle from entities or message text
             entities = latest.get("entities") or []
@@ -3852,20 +4013,25 @@ class ActionPromptReportType(Action):
                 return []
             
             # CONFLICT RESOLUTION: Check if this looks like a textual fleet query
-            # If query has question words or action verbs, it's likely a textual fleet query, not a report request
+            # If query has question words or action verbs AND fleet keywords, it's likely a textual fleet query, not a report request
             # Don't prompt for report type in this case - let ActionHandleTextualFleet handle it
             text_lower = text.lower().strip() if text else ""
             question_words = ['what', 'where', 'when', 'who', 'why', 'how', 'which', 'show', 'list', 'get', 
                             'tell', 'give', 'find', 'display', 'retrieve', 'fetch', 'is', 'are', 'was', 'were']
             action_verbs = ['show', 'list', 'get', 'tell', 'give', 'find', 'display', 'retrieve', 'fetch', 
                           'check', 'see', 'view', 'look', 'search']
+            fleet_keywords = ['driver', 'vehicle', 'car', 'truck', 'bus', 'fleet', 'location', 'speed', 
+                            'distance', 'status', 'engine', 'battery', 'gps', 'device', 'plate', 'asset',
+                            'name', 'who', 'what', 'where']
             
             has_question_word = any(word in text_lower for word in question_words)
             has_action_verb = any(verb in text_lower for verb in action_verbs)
+            has_fleet_keyword = any(keyword in text_lower for keyword in fleet_keywords)
+            has_report_word = "report" in text_lower
             
-            # If query looks like a textual fleet query (has question/action words) and no "report" word,
+            # If query looks like a textual fleet query (has question/action words AND fleet keywords) and no "report" word,
             # don't prompt for report type - let textual fleet action handle it
-            if (has_question_word or has_action_verb) and "report" not in text_lower:
+            if (has_question_word or has_action_verb) and has_fleet_keyword and not has_report_word:
                 logger.info(f"action_prompt_report_type: Query looks like textual fleet query. Skipping report type prompt. Query: {text}")
                 return []
             
@@ -3962,15 +4128,7 @@ class ActionPromptReportType(Action):
                 has_report_type_entity
             )
             
-            # IMPORTANT: If user provides just a vehicle number or date (like "390" or "last month")
-            # WITHOUT a report type in the CURRENT message, we should prompt for report type
-            # even if there's a stale report_type slot from a previous report.
-            # This handles the case where user just finished a report and wants to start a new one.
-            # We only skip prompting if:
-            # 1. User explicitly provided report_type in current message (entity), OR
-            # 2. User's intent is a report intent (request_*_report), OR
-            # 3. User is providing report type detail (provide_report_detail with report_type entity)
-            # We DON'T check has_report_type_slot because it might be stale from previous report
+
             
             # Log detection results
             logger.info(f"action_prompt_report_type: text='{text}', has_asset={has_asset}, has_date={has_date}, has_report_type_entity={has_report_type_entity}, has_report_type_slot={has_report_type_slot}, is_report_intent={is_report_intent}, is_providing_report_type={is_providing_report_type}")

@@ -3,10 +3,9 @@ FastAPI Application for FLEETI - Fleet Management Chatbot System
 Converts the CLI-based main.py to a REST API with dynamic parameters
 """
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from typing import Optional
 import os
 import requests
 import json
@@ -177,8 +176,11 @@ async def chat(request: ChatRequest):
         refined_message, classification, llm_response = classifier.process_message(request.user_input)
         
         # Handle classification result
-        if classification == "general":
+        # Note: classification can be "general conversation" or "fleet"
+        if classification == "general conversation":
             # General conversation - return LLM response directly
+            # The classifier should always provide a response for general conversation
+            # (it defaults to a greeting if none is provided)
             if llm_response:
                 # Save general message to history
                 history_saver.save_general_message(
@@ -192,10 +194,17 @@ async def chat(request: ChatRequest):
                     error=False
                 )
             else:
-                # No LLM response - treat as error
+                # Fallback: if somehow no response was generated, use default
+                default_response = "Helloooo, I am your fleet assistant. How can I help you today?"
+                history_saver.save_general_message(
+                    user_input=request.user_input,
+                    refined_message=refined_message,
+                    llm_response=default_response
+                )
+                
                 return ChatResponse(
-                    human_response="I couldn't generate a response. Please try again.",
-                    error=True
+                    human_response=default_response,
+                    error=False
                 )
         
         elif classification == "fleet":
