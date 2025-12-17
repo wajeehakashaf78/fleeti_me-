@@ -238,7 +238,7 @@ async def chat(request: ChatRequest):
             should_use_rag = False
             
             # Check for "mongo agent" in response text (case insensitive)
-            if "mongo agent" in rasa_response_text or "mongoagent" in rasa_response_text:
+            if "mongo" in rasa_response_text or "mongoagent" in rasa_response_text:
                 should_use_rag = True
             
             # Check if intent is request_fleet_info

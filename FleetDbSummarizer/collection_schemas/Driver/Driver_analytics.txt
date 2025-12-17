@@ -47,3 +47,5 @@ Fields:
 - driver_analytics.total_avg_speed: int
 - driver_analytics.total_avg_speed_details: array
 - driver_analytics.fuel_refill_count: int
+
+- use both Driver.driver_analytics and Driver.analytics for complete driver analytics

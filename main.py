@@ -282,7 +282,7 @@ def main():
                 should_use_rag = False
                 
                 # Check for "mongo agent" in response text (case insensitive)
-                if "mongo agent" in rasa_response_text or "mongoagent" in rasa_response_text:
+                if "mongo" in rasa_response_text or "mongoagent" in rasa_response_text:
                     should_use_rag = True
                     print(f"⏱️  Rasa detected MongoDB agent request in {rasa_elapsed:.2f}s")
                     print(f"Routing to RAG pipeline instead of Rasa response...\n")

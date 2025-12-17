@@ -7,10 +7,14 @@ ENV/
 
 RasaFleeti/venv3.10/
 
+
+RasaFleeti/actions/actions2.py
+RasaFleeti/actions/actions1.py
+
 RasaFleeti/.rasa/
 RasaFleeti/models/
 
-main.py
+# main.py
 # Python cache
 __pycache__/
 *.py[cod]

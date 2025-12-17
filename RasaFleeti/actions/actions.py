@@ -2134,10 +2134,10 @@ class ValidateReportForm(FormValidationAction):
         # AND does NOT contain "report", treat it as a textual fleet query
         question_words = ['what', 'where', 'when', 'who', 'why', 'how', 'which', 'is', 'are', 'was', 'were']
         action_verbs = ['show', 'list', 'get', 'tell', 'give', 'find', 'display', 'retrieve', 'fetch', 
-                       'check', 'see', 'view', 'look', 'search']
+                       'check', 'see', 'view', 'look', 'search', 'provide']
         fleet_keywords = ['driver', 'vehicle', 'car', 'truck', 'bus', 'fleet', 'location', 'speed', 
                          'distance', 'status', 'engine', 'battery', 'gps', 'device', 'plate', 'asset',
-                         'name', 'who', 'what', 'where']  # Added common question words that are also fleet-related
+                         'name', 'who', 'what', 'where', 'analytics']  # Added common question words that are also fleet-related
         
         has_question_word = any(word in text for word in question_words)
         has_action_verb = any(verb in text for verb in action_verbs)
@@ -2160,10 +2160,11 @@ class ValidateReportForm(FormValidationAction):
         textual_patterns = [
             "current location", "where is", "location of", "what is the location",
             "driver name", "name of driver", "who is the driver",
-            "what is", "tell me", "show me", "give me",
+            "what is", "tell me", "show me", "give me", "provide me",
             "engine status", "battery voltage", "speed", "distance",
             "idle", "moving", "gps location", "last location",
-            "which device", "what device", "highest speed", "total distance"
+            "which device", "what device", "highest speed", "total distance",
+            "driver analytics", "analytics of", "analytics for"
         ]
         has_textual_pattern = any(pattern in text for pattern in textual_patterns)
         
@@ -3507,10 +3508,10 @@ class ActionRunReport(Action):
         # Be more permissive - if it has question words AND fleet keywords, it's likely a textual fleet query
         question_words = ['what', 'where', 'when', 'who', 'why', 'how', 'which', 'is', 'are', 'was', 'were']
         action_verbs = ['show', 'list', 'get', 'tell', 'give', 'find', 'display', 'retrieve', 'fetch', 
-                       'check', 'see', 'view', 'look', 'search']
+                       'check', 'see', 'view', 'look', 'search', 'provide']
         fleet_keywords = ['driver', 'vehicle', 'car', 'truck', 'bus', 'fleet', 'location', 'speed', 
                          'distance', 'status', 'engine', 'battery', 'gps', 'device', 'plate', 'asset',
-                         'name', 'who', 'what', 'where']  # Added common question words that are also fleet-related
+                         'name', 'who', 'what', 'where', 'analytics']  # Added common question words that are also fleet-related
         
         has_question_word = any(word in text_lower for word in question_words)
         has_action_verb = any(verb in text_lower for verb in action_verbs)
@@ -3815,9 +3816,10 @@ def call_mongo_agent(user_query: Text, asset_id: Optional[str] = None, plate_num
         
         # For now, return a placeholder response
         # You should replace this with your actual MongoDB agent implementation
+        # Include "mongo agent" or "mongoagent" in response so main.py routes to RAG pipeline
         return {
             "status": 200,
-            "answer": f"I'm processing your query about {plate_number or 'the vehicle'}. Please implement the MongoDB agent function to get the actual answer.",
+            "answer": f"Use mongo agent to process this query about {plate_number or 'the vehicle'}.",
             "query": user_query,
             "asset_id": asset_id,
             "plate_number": plate_number
@@ -3828,7 +3830,7 @@ def call_mongo_agent(user_query: Text, asset_id: Optional[str] = None, plate_num
         return {
             "status": 500,
             "error": str(exc),
-            "answer": "I encountered an error while processing your query. Please try again."
+            "answer": "Use mongo agent to process this query. I encountered an error while processing your query. Please try again."
         }
 
 
@@ -3866,10 +3868,10 @@ class ActionHandleTextualFleet(Action):
             question_words = ['what', 'where', 'when', 'who', 'why', 'how', 'which', 'show', 'list', 'get', 
                             'tell', 'give', 'find', 'display', 'retrieve', 'fetch', 'is', 'are', 'was', 'were']
             action_verbs = ['show', 'list', 'get', 'tell', 'give', 'find', 'display', 'retrieve', 'fetch', 
-                          'check', 'see', 'view', 'look', 'search']
+                          'check', 'see', 'view', 'look', 'search', 'provide']
             fleet_keywords = ['driver', 'vehicle', 'car', 'truck', 'bus', 'fleet', 'location', 'speed', 
                             'distance', 'status', 'engine', 'battery', 'gps', 'device', 'plate', 'asset',
-                            'name', 'who', 'what', 'where']
+                            'name', 'who', 'what', 'where', 'analytics']
             
             has_question_word = any(word in user_query_lower for word in question_words)
             has_action_verb = any(verb in user_query_lower for verb in action_verbs)
@@ -4019,10 +4021,10 @@ class ActionPromptReportType(Action):
             question_words = ['what', 'where', 'when', 'who', 'why', 'how', 'which', 'show', 'list', 'get', 
                             'tell', 'give', 'find', 'display', 'retrieve', 'fetch', 'is', 'are', 'was', 'were']
             action_verbs = ['show', 'list', 'get', 'tell', 'give', 'find', 'display', 'retrieve', 'fetch', 
-                          'check', 'see', 'view', 'look', 'search']
+                          'check', 'see', 'view', 'look', 'search', 'provide']
             fleet_keywords = ['driver', 'vehicle', 'car', 'truck', 'bus', 'fleet', 'location', 'speed', 
                             'distance', 'status', 'engine', 'battery', 'gps', 'device', 'plate', 'asset',
-                            'name', 'who', 'what', 'where']
+                            'name', 'who', 'what', 'where', 'analytics']
             
             has_question_word = any(word in text_lower for word in question_words)
             has_action_verb = any(verb in text_lower for verb in action_verbs)

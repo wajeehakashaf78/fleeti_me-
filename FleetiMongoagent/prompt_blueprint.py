@@ -55,6 +55,10 @@ PLATE NUMBER QUERIES:
 - Example for plate "243": {"$match": {"sub_tenant_id": "sub_tenant_id", "details.plate_number": {"$regex": "^243$", "$options": "i"}}}
 - Example for plate "123 ABC": {"$match": {"sub_tenant_id": "sub_tenant_id", "details.plate_number": {"$regex": "^123 ABC$", "$options": "i"}}}
 
+MANDATORY PATTERN FOR STRING MATCHES:
+- Match all strings with case insensitive regex.
+- {"field_name": {"$regex": "^value$", "$options": "i"}}
+
 EVENT/ALERT NAME MATCHING RULES:
 - When matching event types in Events collection, use flexible regex to handle variations in naming:
   {"$regex": "event[-_\\s]*name|eventname", "$options": "i"}

@@ -20,3 +20,4 @@ Fields:
 - details.custom_optional.register_on_wasl: bool
 - details.custom_optional.is_wasl: bool|null
 
+STRICT: DO NOT CHANGE ANY COMPANY IDENTITY NUMBER.
