@@ -3,14 +3,14 @@ FastAPI Application for FLEETI - Fleet Management Chatbot System
 Converts the CLI-based main.py to a REST API with dynamic parameters
 """
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 import os
-import requests
 import json
 import ast
 import re
+from typing import Optional, Dict, Any, List
 from datetime import datetime
 from dotenv import load_dotenv
 
@@ -22,12 +22,16 @@ from FleetiMongoagent.prompt_blueprint import PROMPT as prompt_blueprint
 from FleetiMongoagent.run_all_models import orchistrator_main as mongoagent_orchistrator_main
 from FleetiQueryRunner.execute import LlmMongoRunner
 from FleetiResponse.respond import generate_llm_response as generate_human_response
+from jwt_utils import decode_jwt_no_verify, extract_db_and_sub_tenant
+
+# FleetiReports modules (integrated)
+from FleetiReports.llm_agent import llm_agent
+from FleetiReports.mongo_handler import mongo_handler
+from FleetiReports.api_handler import APIHandler
+from FleetiReports.models import LLMResponse
 
 # Load environment variables
 load_dotenv()
-
-# Get FleetiReports URL from environment variable
-FLEETI_REPORTS_URL = os.getenv("FLEETI_REPORTS_URL", "http://localhost:8000")
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -51,79 +55,130 @@ pipeline = RAGPipeline()
 
 
 # ================================
-# FleetiReports Integration Function
+# FleetiReports Integration Helpers
 # ================================
-def call_fleeti_reports_api(user_message: str, session_id: str, sub_tenant_id: str, mongo_db: str) -> dict:
+def _build_reports_base_url(base_url: str) -> str:
+    return base_url.rstrip("/") + "/api/admin/reports"
+
+
+def _build_reports_conversation_history(session_doc: Optional[Dict[str, Any]]) -> List[Dict[str, str]]:
     """
-    Call FleetiReports HTTP API to process user message.
-    
-    Args:
-        user_message: The user's message to send to FleetiReports
-        session_id: Session ID for conversation tracking
-        sub_tenant_id: Sub-tenant identifier
-        mongo_db: MongoDB database name
-        
-    Returns:
-        Dictionary with:
-        - success: bool indicating if call was successful
-        - status: status from FleetiReports response
-        - llm_response: LLM response object containing type, pre_req, message
-        - mongodb_query_result: MongoDB query result (if any)
-        - api_response: API response data (if any)
-        - error: Error message if call failed
+    Build conversation history for FleetiReports LLM from Mongo session doc.
+    Excludes any messages that do not have a 'type' field (static initial message).
     """
-    fleeti_reports_url = f"{FLEETI_REPORTS_URL}/chat"
-    
-    payload = {
-        "sub_tenant_id": sub_tenant_id,
-        "session_id": session_id,
-        "mongo_db": mongo_db,
-        "user_input": user_message
-    }
-    
-    try:
-        response = requests.post(fleeti_reports_url, json=payload, timeout=60)
-        response.raise_for_status()
-        
-        response_data = response.json()
-        
-        return {
-            "success": True,
-            "status": response_data.get("status"),
-            "llm_response": response_data.get("llm_response"),
-            "mongodb_query_result": response_data.get("mongodb_query_result"),
-            "api_response": response_data.get("api_response"),
-            "error": response_data.get("error")
-        }
-        
-    except requests.exceptions.RequestException as e:
-        return {
-            "success": False,
-            "status": "error",
-            "llm_response": None,
-            "mongodb_query_result": None,
-            "api_response": None,
-            "error": str(e)
-        }
-    except Exception as e:
-        return {
-            "success": False,
-            "status": "error",
-            "llm_response": None,
-            "mongodb_query_result": None,
-            "api_response": None,
-            "error": str(e)
-        }
+    if not session_doc:
+        return []
+    history: List[Dict[str, str]] = []
+    for msg in session_doc.get("messages", []):
+        msg_type = msg.get("type")
+        if msg_type == "general":
+            user_content = msg.get("user_input", "")
+            assistant_content = msg.get("llm_response", "")
+            if not isinstance(assistant_content, str):
+                assistant_content = json.dumps(assistant_content, default=str)
+            history.append({"role": "user", "content": user_content})
+            history.append({"role": "assistant", "content": assistant_content})
+        elif msg_type == "fleet":
+            user_content = msg.get("user_input", "")
+            assistant_content = msg.get("human_response", "")
+            if not isinstance(assistant_content, str):
+                assistant_content = json.dumps(assistant_content, default=str)
+            history.append({"role": "user", "content": user_content})
+            history.append({"role": "assistant", "content": assistant_content})
+    return history
+
+
+def _parse_date_range(date_range_str: str) -> tuple[str, str]:
+    if "," in date_range_str:
+        parts = date_range_str.split(",", 1)
+        return parts[0].strip(), parts[1].strip()
+    return date_range_str.strip(), date_range_str.strip()
+
+
+async def _process_report_request(
+    llm_response: LLMResponse,
+    db_name: str,
+    api_handler: APIHandler
+) -> Dict[str, Any]:
+    result: Dict[str, Any] = {"mongodb_query_result": None, "api_response": None}
+    report_type = llm_response.type
+    pre_req = llm_response.pre_req
+    if not pre_req:
+        return result
+
+    asset_ids = None
+    if pre_req.asset_plate_numbers:
+        query_result = mongo_handler.get_asset_ids_by_plate_numbers(
+            db_name,
+            pre_req.asset_plate_numbers
+        )
+        result["mongodb_query_result"] = query_result
+        if query_result["success"] and query_result["asset_ids"]:
+            asset_ids = ",".join(query_result["asset_ids"])
+    elif pre_req.group_names:
+        query_result = mongo_handler.get_asset_ids_by_group_names(
+            db_name,
+            pre_req.group_names
+        )
+        result["mongodb_query_result"] = query_result
+        if query_result["success"] and query_result["asset_ids"]:
+            asset_ids = ",".join(query_result["asset_ids"])
+
+    driver_ids = None
+    if pre_req.driver_names:
+        query_result = mongo_handler.get_driver_ids_by_names(
+            db_name,
+            pre_req.driver_names
+        )
+        result["mongodb_query_result"] = query_result
+        if query_result["success"] and query_result["driver_ids"]:
+            driver_ids = ",".join(query_result["driver_ids"])
+
+    start_date = None
+    end_date = None
+    if pre_req.date_range:
+        start_date, end_date = _parse_date_range(pre_req.date_range)
+
+    if report_type == "Trip":
+        if asset_ids and start_date and end_date:
+            result["api_response"] = await api_handler.fetch_trip_report(asset_ids, start_date, end_date)
+    elif report_type == "FleetSummary":
+        if asset_ids:
+            result["api_response"] = await api_handler.fetch_fleet_summary(asset_ids)
+    elif report_type == "FleetPerformanceSummary":
+        if asset_ids and start_date and end_date:
+            result["api_response"] = await api_handler.fetch_fleet_performance_summary(
+                asset_ids, start_date, end_date
+            )
+    elif report_type == "SIM":
+        if asset_ids and start_date and end_date:
+            result["api_response"] = await api_handler.fetch_sim_report(asset_ids, start_date, end_date)
+    elif report_type == "Utilization":
+        if start_date and end_date:
+            result["api_response"] = await api_handler.fetch_utilization_report(start_date, end_date)
+    elif report_type == "DrivingBehaviour":
+        if driver_ids and start_date and end_date:
+            result["api_response"] = await api_handler.fetch_generic_report(
+                report_type, driver_ids=driver_ids, start_date=start_date, end_date=end_date
+            )
+    else:
+        if asset_ids and start_date and end_date:
+            result["api_response"] = await api_handler.fetch_generic_report(
+                report_type, asset_ids=asset_ids, start_date=start_date, end_date=end_date
+            )
+
+    return result
 
 # Pydantic models for request/response
 class ChatRequest(BaseModel):
-    sub_tenant_id: str = Field(..., description="Sub-tenant ID for data isolation")
-    session_id: str = Field(..., description="Session ID for conversation history")
-    mongo_db: str = Field(..., description="MongoDB database name to query")
-    user_input: str = Field(..., description="User's message/question")
+    base_url: str = Field(..., description="Base URL from FE (e.g., https://qa.dev-iot.tracking.me/)")
+    assistant_static_input: Optional[str] = Field(None, description="Initial static assistant message")
+    user_input: Optional[str] = Field(None, description="User's message/question")
+    session_id: Optional[str] = Field(None, description="Session ID (MongoDB document ID)")
 
 class ChatResponse(BaseModel):
-    human_response: str = Field(..., description="Natural language response")
+    human_response: Optional[Any] = Field(default=None, description="Natural language response or structured data")
+    session_id: Optional[str] = Field(default=None, description="Session ID (MongoDB document ID)")
     error: bool = Field(default=False, description="Whether an error occurred")
 
 
@@ -138,7 +193,7 @@ async def root():
 
 
 @app.post("/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest):
+async def chat(request: ChatRequest, authorization: Optional[str] = Header(default=None)):
     """
     Main chat endpoint - processes user input and returns AI response
     
@@ -149,18 +204,54 @@ async def chat(request: ChatRequest):
         ChatResponse with human_response and error flag
     """
     try:
+        if not authorization:
+            return ChatResponse(
+                human_response="Missing Authorization header.",
+                error=True
+            )
+
+        token_payload = decode_jwt_no_verify(authorization)
+        mongo_db, sub_tenant_id = extract_db_and_sub_tenant(token_payload)
+
+        if not mongo_db or not sub_tenant_id:
+            return ChatResponse(
+                human_response="Invalid token: missing database or sub-tenant information.",
+                error=True
+            )
+
+        # Scenario 1: Create session with static assistant message
+        if request.assistant_static_input is not None:
+            history_saver = FleetiHistorySaver(
+                session_id="static_session",
+                sub_tenant_id=sub_tenant_id,
+                mongo_db=mongo_db,
+            )
+            session_id = history_saver.save_static_message(request.assistant_static_input)
+            return ChatResponse(
+                human_response=None,
+                session_id=session_id,
+                error=False
+            )
+
+        # Scenario 2: Normal chat flow
+        if not request.user_input or not request.session_id:
+            return ChatResponse(
+                human_response="Missing user_input or session_id.",
+                error=True
+            )
+
         # Initialize history saver with dynamic session_id and sub_tenant_id
         history_saver = FleetiHistorySaver(
             session_id=request.session_id,
-            sub_tenant_id=request.sub_tenant_id,
-            mongo_db=request.mongo_db,
+            sub_tenant_id=sub_tenant_id,
+            mongo_db=mongo_db,
         )
-        
-        # Load existing conversation history
+
+        # Load existing conversation history (excludes static message)
         existing_history = history_saver.load_session_history()
         if existing_history:
             classifier.conversation_history = existing_history
-        
+
         # Process message through classifier
         refined_message, classification, llm_response = classifier.process_message(request.user_input)
         
@@ -197,38 +288,17 @@ async def chat(request: ChatRequest):
                 )
         
         elif classification == "fleet":
-            # Fleet query - First check with FleetiReports
-            fleeti_response = call_fleeti_reports_api(
-                refined_message, 
-                request.session_id, 
-                request.sub_tenant_id, 
-                request.mongo_db
-            )
-            
-            if not fleeti_response["success"]:
-                # FleetiReports API failed - return static error message
-                error_response = "I ran into a problem."
-                
-                # Save error as fleet message
-                history_saver.save_fleet_message(
-                    user_input=request.user_input,
-                    refined_message=refined_message,
-                    selected_collections=[],
-                    query="",
-                    query_response=[],
-                    human_response=error_response
-                )
-                
-                return ChatResponse(
-                    human_response=error_response,
-                    error=True
-                )
-            
-            # Extract llm_response from FleetiReports response
-            llm_response_data = fleeti_response.get("llm_response", {})
-            response_type = llm_response_data.get("type", "invalid") if llm_response_data else "invalid"
-            response_message = llm_response_data.get("message", "") if llm_response_data else ""
-            api_response_data = fleeti_response.get("api_response")
+            # Fleet query - First check with FleetiReports (integrated)
+            base_api_url = _build_reports_base_url(request.base_url)
+            reports_api_handler = APIHandler(base_url=base_api_url, access_token=authorization)
+
+            session_doc = history_saver.get_session_document()
+            reports_history = _build_reports_conversation_history(session_doc)
+            report_llm_response = llm_agent.process_user_input(refined_message, reports_history)
+
+            response_type = report_llm_response.type if report_llm_response else "invalid"
+            response_message = report_llm_response.message if report_llm_response else ""
+            api_response_data = None
             
             # Check if type is "invalid" - route to FleetDbSummarizer (RAG pipeline)
             if response_type.lower() == "invalid":
@@ -309,13 +379,13 @@ async def chat(request: ChatRequest):
                     # Replace the value with actual sub_tenant_id (always use double quotes)
                     patterns = [
                         # Match keys with double quotes, values with double quotes (handles nested paths)
-                        (r'("(?:[^"]*\.)?sub_tenant_id"\s*:\s*)"sub_tenant_id"', r'\1"' + request.sub_tenant_id + '"'),
+                        (r'("(?:[^"]*\.)?sub_tenant_id"\s*:\s*)"sub_tenant_id"', r'\1"' + sub_tenant_id + '"'),
                         # Match keys with double quotes, values with single quotes
-                        (r'("(?:[^"]*\.)?sub_tenant_id"\s*:\s*)\'sub_tenant_id\'', r'\1"' + request.sub_tenant_id + '"'),
+                        (r'("(?:[^"]*\.)?sub_tenant_id"\s*:\s*)\'sub_tenant_id\'', r'\1"' + sub_tenant_id + '"'),
                         # Match keys with single quotes, values with double quotes
-                        (r'(\'(?:[^\']*\.)?sub_tenant_id\'\s*:\s*)"sub_tenant_id"', r'\1"' + request.sub_tenant_id + '"'),
+                        (r'(\'(?:[^\']*\.)?sub_tenant_id\'\s*:\s*)"sub_tenant_id"', r'\1"' + sub_tenant_id + '"'),
                         # Match keys with single quotes, values with single quotes
-                        (r'(\'(?:[^\']*\.)?sub_tenant_id\'\s*:\s*)\'sub_tenant_id\'', r'\1"' + request.sub_tenant_id + '"'),
+                        (r'(\'(?:[^\']*\.)?sub_tenant_id\'\s*:\s*)\'sub_tenant_id\'', r'\1"' + sub_tenant_id + '"'),
                     ]
                     
                     for pattern, replacement in patterns:
@@ -327,7 +397,7 @@ async def chat(request: ChatRequest):
                     
                     # Temporarily switch to the requested database
                     original_db = query_runner.db
-                    query_runner.db = query_runner.client[request.mongo_db]
+                    query_runner.db = query_runner.client[mongo_db]
                     
                     try:
                         results = query_runner.run(mongoagent_response, limit=10)
@@ -368,11 +438,11 @@ async def chat(request: ChatRequest):
                         query_runner.db = original_db
             else:
                 # Type is NOT "invalid" - use FleetiReports response
-                
+
                 # Check if message field is not empty - this IS the final response
                 if response_message and response_message.strip():
                     final_response = response_message
-                    
+
                     # Save FleetiReports response as fleet message
                     history_saver.save_fleet_message(
                         user_input=request.user_input,
@@ -382,45 +452,40 @@ async def chat(request: ChatRequest):
                         query_response=[],
                         human_response=final_response
                     )
-                    
+
                     # Update classifier history
                     if classifier.conversation_history:
                         classifier.conversation_history[-1]["assistant"] = final_response
-                    
+
                     return ChatResponse(
                         human_response=final_response,
                         error=False
                     )
                 else:
-                    # Message is empty - check api_response data
-                    # If api_response.data.data is empty, tell user we couldn't find anything
-                    api_data = None
-                    if api_response_data and isinstance(api_response_data, dict):
-                        inner_data = api_response_data.get("data")
-                        if inner_data and isinstance(inner_data, dict):
-                            api_data = inner_data.get("data")
-                    
-                    if not api_data or (isinstance(api_data, list) and len(api_data) == 0):
-                        # No data found - return user-friendly message
-                        final_response = "I couldn't find any data matching your request."
-                    else:
-                        # Has data - use api_response + type as final response (raw JSON)
-                        final_response_data = {
-                            "type": response_type,
-                            "api_response": api_response_data
-                        }
-                        final_response = json.dumps(final_response_data, indent=2, default=str)
-                    
+                    # Message is empty - process report request
+                    processing_result = await _process_report_request(
+                        report_llm_response,
+                        mongo_db,
+                        reports_api_handler
+                    )
+                    api_response_data = processing_result.get("api_response")
+
+                    # For reports, always return structured response
+                    final_response = {
+                        "type": response_type,
+                        "api_response": api_response_data
+                    }
+
                     # Save FleetiReports response as fleet message
                     history_saver.save_fleet_message(
                         user_input=request.user_input,
                         refined_message=refined_message,
                         selected_collections=[],
                         query="",
-                        query_response=api_response_data if api_response_data else [],
+                        query_response=[],
                         human_response=final_response
                     )
-                    
+
                     return ChatResponse(
                         human_response=final_response,
                         error=False
@@ -442,114 +507,116 @@ async def chat(request: ChatRequest):
 
 
 @app.get("/conversations")
-async def get_conversations(sub_tenant_id: str, mongo_db: str):
+async def get_conversations(authorization: Optional[str] = Header(default=None)):
     """
-    Get list of all conversation sessions for a sub-tenant
-    
-    Args:
-        sub_tenant_id: Sub-tenant identifier
-        mongo_db: MongoDB database name
-        
-    Returns:
-        List of conversation sessions with metadata
+    Get list of all conversation sessions for the sub-tenant in the JWT.
+    Returns session _id, last message content, and last message timestamp.
     """
     try:
+        if not authorization:
+            return {"error": "Missing Authorization header", "conversations": []}
+
+        token_payload = decode_jwt_no_verify(authorization)
+        mongo_db, sub_tenant_id = extract_db_and_sub_tenant(token_payload)
+        if not mongo_db or not sub_tenant_id:
+            return {"error": "Invalid token: missing database or sub-tenant information.", "conversations": []}
+
         from pymongo import MongoClient
-        import os
-        from dotenv import load_dotenv
-        
         load_dotenv()
         mongo_uri = os.getenv("MONGO_URI")
         if not mongo_uri:
             return {"error": "MONGO_URI not configured", "conversations": []}
-        
+
         client = MongoClient(mongo_uri)
         db = client[mongo_db]
         collection = db["FleetiMessages"]
-        
-        # Find all sessions for this sub-tenant
-        sessions = list(collection.find(
-            {"sub_tenant_id": sub_tenant_id},
-            {"sessionId": 1, "created_at": 1, "messages": {"$slice": 1}}  # Get first message for preview
-        ).sort("created_at", -1))
-        
+
+        pipeline = [
+            {"$match": {"sub_tenant_id": sub_tenant_id}},
+            {"$addFields": {"last_message": {"$arrayElemAt": ["$messages", -1]}}},
+            {"$addFields": {"last_timestamp": "$last_message.timestamp"}},
+            {"$sort": {"last_timestamp": -1}},
+            {"$project": {"_id": 1, "last_message": 1, "last_timestamp": 1}}
+        ]
+
+        sessions = list(collection.aggregate(pipeline))
+
         conversations = []
         for session in sessions:
-            first_message = session.get("messages", [{}])[0] if session.get("messages") else {}
-            preview = first_message.get("user_input", first_message.get("refined_message", ""))
-            
+            last_msg = session.get("last_message") or {}
+            last_text = (
+                last_msg.get("user_input")
+                or last_msg.get("human_response")
+                or last_msg.get("llm_response")
+                or last_msg.get("assistant_static_input")
+                or ""
+            )
+            if not isinstance(last_text, str):
+                last_text = json.dumps(last_text, default=str)
+
+            last_ts = session.get("last_timestamp")
             conversations.append({
-                "session_id": session.get("sessionId"),
-                "created_at": session.get("created_at").isoformat() if session.get("created_at") else None,
-                "preview": preview[:50] + "..." if len(preview) > 50 else preview,
-                "message_count": len(session.get("messages", []))
+                "session_id": str(session.get("_id")),
+                "last_message": last_text,
+                "last_timestamp": last_ts.isoformat() if last_ts else None
             })
-        
+
         return {"conversations": conversations, "error": None}
     except Exception as e:
         return {"error": str(e), "conversations": []}
 
 
-@app.get("/conversation/{session_id}")
-async def get_conversation(session_id: str, sub_tenant_id: str, mongo_db: str):
+class SessionRequest(BaseModel):
+    session_id: str = Field(..., description="Session ID (MongoDB document ID)")
+
+
+@app.post("/session")
+async def get_session(request: SessionRequest, authorization: Optional[str] = Header(default=None)):
     """
-    Get full conversation history for a specific session
-    
-    Args:
-        session_id: Session identifier
-        sub_tenant_id: Sub-tenant identifier
-        mongo_db: MongoDB database name
-        
-    Returns:
-        List of messages in the conversation
+    Get conversation messages for a specific session.
+    Returns user_input and human_response in the same order as stored.
     """
     try:
+        if not authorization:
+            return {"error": "Missing Authorization header", "messages": []}
+
+        token_payload = decode_jwt_no_verify(authorization)
+        mongo_db, sub_tenant_id = extract_db_and_sub_tenant(token_payload)
+        if not mongo_db or not sub_tenant_id:
+            return {"error": "Invalid token: missing database or sub-tenant information.", "messages": []}
+
         from pymongo import MongoClient
-        import os
-        from dotenv import load_dotenv
-        
         load_dotenv()
         mongo_uri = os.getenv("MONGO_URI")
         if not mongo_uri:
             return {"error": "MONGO_URI not configured", "messages": []}
-        
+
         client = MongoClient(mongo_uri)
         db = client[mongo_db]
         collection = db["FleetiMessages"]
-        
+
         session_doc = collection.find_one({
-            "sessionId": session_id,
+            "sessionId": request.session_id,
             "sub_tenant_id": sub_tenant_id
         })
-        
+
         if not session_doc:
             return {"messages": [], "error": None}
-        
+
         messages = []
         for msg in session_doc.get("messages", []):
-            if msg.get("type") == "general":
+            if "assistant_static_input" in msg:
                 messages.append({
-                    "role": "user",
-                    "content": msg.get("user_input", ""),
-                    "timestamp": msg.get("timestamp").isoformat() if msg.get("timestamp") else None
+                    "user_input": "",
+                    "human_response": msg.get("assistant_static_input", "")
                 })
+                continue
+            if "user_input" in msg:
                 messages.append({
-                    "role": "assistant",
-                    "content": msg.get("llm_response", ""),
-                    "timestamp": msg.get("timestamp").isoformat() if msg.get("timestamp") else None
+                    "user_input": msg.get("user_input", ""),
+                    "human_response": msg.get("human_response", msg.get("llm_response", ""))
                 })
-            elif msg.get("type") == "fleet":
-                messages.append({
-                    "role": "user",
-                    "content": msg.get("user_input", ""),
-                    "timestamp": msg.get("timestamp").isoformat() if msg.get("timestamp") else None
-                })
-                messages.append({
-                    "role": "assistant",
-                    "content": msg.get("human_response", ""),
-                    "timestamp": msg.get("timestamp").isoformat() if msg.get("timestamp") else None
-                })
-        
+
         return {"messages": messages, "error": None}
     except Exception as e:
         return {"error": str(e), "messages": []}

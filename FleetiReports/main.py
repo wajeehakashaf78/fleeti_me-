@@ -9,12 +9,12 @@ from contextlib import asynccontextmanager
 import asyncio
 from typing import Dict, Any
 
-from models import ChatRequest, ChatResponse, LLMResponse
-from config import settings
-from history_manager import history_manager
-from llm_agent import llm_agent
-from mongo_handler import mongo_handler
-from api_handler import api_handler
+from .models import ChatRequest, ChatResponse, LLMResponse
+from .config import settings
+from .history_manager import history_manager
+from .llm_agent import llm_agent
+from .mongo_handler import mongo_handler
+from .api_handler import api_handler
 
 
 # Background task for cleaning up expired sessions

@@ -6,17 +6,24 @@ Handles external API calls to fetch reports
 from typing import Dict, Any, Optional
 from datetime import datetime
 import httpx
-from config import settings
+from .config import settings
 
 
 class APIHandler:
     """Handles external API calls"""
     
-    def __init__(self):
+    def __init__(
+        self,
+        base_url: Optional[str] = None,
+        access_token: Optional[str] = None,
+        timeout: float = 30.0
+    ):
         """Initialize API handler"""
-        self.base_url = settings.BASE_API_URL
-        self.access_token = settings.ACCESS_TOKEN
-        self.timeout = 30.0  # 30 seconds timeout
+        self.base_url = base_url or settings.BASE_API_URL
+        self.access_token = (access_token or settings.ACCESS_TOKEN or "").strip()
+        if self.access_token.lower().startswith("bearer "):
+            self.access_token = self.access_token.split(" ", 1)[1].strip()
+        self.timeout = timeout  # seconds timeout
     
     def _get_headers(self) -> Dict[str, str]:
         """Get headers for API requests"""

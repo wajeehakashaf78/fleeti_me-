@@ -142,6 +142,28 @@ class FleetiHistorySaver:
         }
         
         self._append_message(message)
+
+    def save_static_message(self, message: str) -> str:
+        """
+        Create a new session document with a static assistant message.
+        Returns the MongoDB document ID as the session ID.
+        """
+        new_id = ObjectId()
+        doc = {
+            "_id": new_id,
+            "sessionId": str(new_id),
+            "sub_tenant_id": self.sub_tenant_id,
+            "created_at": datetime.now(timezone.utc),
+            "messages": [
+                {
+                    "assistant_static_input": message,
+                    "timestamp": datetime.now(timezone.utc)
+                }
+            ]
+        }
+        self.db[self.collection_name].insert_one(doc)
+        print(f"Created new session document for sessionId: {str(new_id)} with sub_tenant_id: {self.sub_tenant_id}")
+        return str(new_id)
     
     def _append_message(self, message: Dict[str, Any]):
         """

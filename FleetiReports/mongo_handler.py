@@ -6,8 +6,8 @@ Executes MongoDB queries to fetch asset and driver information
 from typing import List, Dict, Any
 from pymongo import MongoClient
 from pymongo.errors import PyMongoError
-from config import settings
-from models import AssetInfo, DriverInfo
+from .config import settings
+from .models import AssetInfo, DriverInfo
 
 
 class MongoDBHandler:

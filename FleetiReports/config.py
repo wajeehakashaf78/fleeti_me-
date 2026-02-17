@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str
     
     # External API Configuration
-    ACCESS_TOKEN: str
+    ACCESS_TOKEN: str = ""
     
     # MongoDB Configuration
     MONGO_URI: str
@@ -29,6 +29,7 @@ class Settings(BaseSettings):
         env_file = ".env"
         env_file_encoding = "utf-8"
         case_sensitive = True
+        extra = "allow"
 
 
 # Global settings instance

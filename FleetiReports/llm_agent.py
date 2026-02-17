@@ -6,9 +6,9 @@ Handles OpenAI API interactions
 import json
 from typing import List, Dict, Optional
 from openai import OpenAI
-from config import settings
-from prompts import get_system_prompt
-from models import LLMResponse
+from .config import settings
+from .prompts import get_system_prompt
+from .models import LLMResponse
 
 
 class LLMAgent:
