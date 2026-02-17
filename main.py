@@ -1,6 +1,16 @@
 # ORCHISTRATOR
 import time
 import requests
+import os
+import json
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+# Get FleetiReports URL and MongoDB database from environment
+FLEETI_REPORTS_URL = os.getenv("FLEETI_REPORTS_URL", "http://localhost:8000")
+MONGO_DB = os.getenv("MONGO_DB", "qa")
 
 from ConversationClassifier.conversation_classifier import ConversationClassifier
 # Initialize classifier
@@ -90,83 +100,67 @@ def main_classifier(user_message, start_time):
 
 
 # ================================
-# Rasa Integration Function
+# FleetiReports Integration Function
 # ================================
-def call_rasa_api(user_message: str, session_id: str) -> dict:
+def call_fleeti_reports_api(user_message: str, session_id: str, sub_tenant_id: str, mongo_db: str) -> dict:
     """
-    Call Rasa HTTP API to process user message.
+    Call FleetiReports HTTP API to process user message.
     
     Args:
-        user_message: The user's message to send to Rasa
-        session_id: Session ID to use as sender_id for Rasa
+        user_message: The user's message to send to FleetiReports
+        session_id: Session ID for conversation tracking
+        sub_tenant_id: Sub-tenant identifier
+        mongo_db: MongoDB database name
         
     Returns:
         Dictionary with:
         - success: bool indicating if call was successful
-        - response_text: Combined text from all Rasa responses
-        - intent: Detected intent name (if available)
+        - status: status from FleetiReports response
+        - llm_response: LLM response object containing type, pre_req, message
+        - mongodb_query_result: MongoDB query result (if any)
+        - api_response: API response data (if any)
         - error: Error message if call failed
     """
-    rasa_url = "http://localhost:5005/webhooks/rest/webhook"
+    fleeti_reports_url = f"{FLEETI_REPORTS_URL}/chat"
     
     payload = {
-        "sender": session_id,
-        "message": user_message
+        "sub_tenant_id": sub_tenant_id,
+        "session_id": session_id,
+        "mongo_db": mongo_db,
+        "user_input": user_message
     }
     
     try:
-        response = requests.post(rasa_url, json=payload, timeout=30)
+        response = requests.post(fleeti_reports_url, json=payload, timeout=60)
         response.raise_for_status()
         
-        # Rasa returns array of message objects: [{"text": "response 1"}, {"text": "response 2"}]
-        rasa_messages = response.json()
-        
-        # Combine all text responses into a single string
-        response_texts = []
-        for msg in rasa_messages:
-            if isinstance(msg, dict) and "text" in msg:
-                response_texts.append(msg["text"])
-        
-        combined_response = "\n".join(response_texts) if response_texts else ""
-        
-        # Try to get intent from tracker
-        intent = None
-        try:
-            tracker_url = f"http://localhost:5005/conversations/{session_id}/tracker"
-            tracker_response = requests.get(tracker_url, timeout=10)
-            if tracker_response.status_code == 200:
-                tracker_data = tracker_response.json()
-                # Get the latest intent from events
-                events = tracker_data.get("events", [])
-                for event in reversed(events):  # Check from most recent
-                    if event.get("event") == "user" and "parse_data" in event:
-                        intent_data = event.get("parse_data", {}).get("intent", {})
-                        if intent_data and "name" in intent_data:
-                            intent = intent_data["name"]
-                            break
-        except Exception:
-            # If tracker call fails, continue without intent
-            pass
+        response_data = response.json()
         
         return {
             "success": True,
-            "response_text": combined_response,
-            "intent": intent,
-            "error": None
+            "status": response_data.get("status"),
+            "llm_response": response_data.get("llm_response"),
+            "mongodb_query_result": response_data.get("mongodb_query_result"),
+            "api_response": response_data.get("api_response"),
+            "error": response_data.get("error")
         }
         
     except requests.exceptions.RequestException as e:
         return {
             "success": False,
-            "response_text": "",
-            "intent": None,
+            "status": "error",
+            "llm_response": None,
+            "mongodb_query_result": None,
+            "api_response": None,
             "error": str(e)
         }
     except Exception as e:
         return {
             "success": False,
-            "response_text": "",
-            "intent": None,
+            "status": "error",
+            "llm_response": None,
+            "mongodb_query_result": None,
+            "api_response": None,
             "error": str(e)
         }
 
@@ -251,17 +245,22 @@ def main():
                     llm_response=llm_response
                 )
             else:
-                # Fleet query - First check with Rasa
-                rasa_start = time.time()
-                rasa_response = call_rasa_api(refined_message, SESSION_ID)
-                rasa_elapsed = time.time() - rasa_start
+                # Fleet query - First check with FleetiReports
+                fleeti_start = time.time()
+                fleeti_response = call_fleeti_reports_api(
+                    refined_message, 
+                    SESSION_ID, 
+                    SUB_TENANT_ID, 
+                    MONGO_DB
+                )
+                fleeti_elapsed = time.time() - fleeti_start
                 total_elapsed = time.time() - start_time
                 
-                if not rasa_response["success"]:
-                    # Rasa API failed - return static error message
+                if not fleeti_response["success"]:
+                    # FleetiReports API failed - return static error message
                     error_response = "I ran into a problem."
                     print(f"\nResponse: {error_response}")
-                    print(f"⏱️  Rasa API call failed in {rasa_elapsed:.2f}s (Total: {total_elapsed:.2f}s)\n")
+                    print(f"⏱️  FleetiReports API call failed in {fleeti_elapsed:.2f}s (Total: {total_elapsed:.2f}s)\n")
                     
                     # Save error as fleet message
                     history_saver.save_fleet_message(
@@ -274,27 +273,20 @@ def main():
                     )
                     continue
                 
-                rasa_response_text = rasa_response["response_text"].lower() if rasa_response["response_text"] else ""
-                rasa_intent = rasa_response.get("intent")
+                # Extract llm_response from FleetiReports response
+                llm_response_data = fleeti_response.get("llm_response", {})
+                response_type = llm_response_data.get("type", "invalid") if llm_response_data else "invalid"
+                response_message = llm_response_data.get("message", "") if llm_response_data else ""
+                api_response_data = fleeti_response.get("api_response")
                 
-                # Check if we should ignore Rasa response and use RAG pipeline
-                # Scenario B: If response contains "mongo agent" (case insensitive) or intent is request_fleet_info
-                should_use_rag = False
+                print(f"⏱️  FleetiReports completed in {fleeti_elapsed:.2f}s (Total: {total_elapsed:.2f}s)")
+                print(f"Response Type: {response_type}")
                 
-                # Check for "mongo agent" in response text (case insensitive)
-                if "mongo" in rasa_response_text or "mongoagent" in rasa_response_text:
-                    should_use_rag = True
-                    print(f"⏱️  Rasa detected MongoDB agent request in {rasa_elapsed:.2f}s")
-                    print(f"Routing to RAG pipeline instead of Rasa response...\n")
-                
-                # Check if intent is request_fleet_info
-                if rasa_intent == "request_fleet_info":
-                    should_use_rag = True
-                    print(f"⏱️  Rasa detected request_fleet_info intent in {rasa_elapsed:.2f}s")
-                    print(f"Routing to RAG pipeline instead of Rasa response...\n")
-                
-                if should_use_rag:
-                    # Scenario B: Ignore Rasa, use existing RAG pipeline
+                # Check if type is "invalid" - route to FleetDbSummarizer (RAG pipeline)
+                if response_type.lower() == "invalid":
+                    print(f"Type is 'invalid' - Routing to FleetDbSummarizer (RAG pipeline)...\n")
+                    
+                    # Use existing RAG pipeline
                     rag_result = main_rag_pipeline(refined_message, start_time, rebuild)
                     
                     # Extract schemas from result
@@ -375,7 +367,6 @@ def main():
                         print(f"⏱️  Query execution completed in {query_elapsed:.2f}s (Total: {total_elapsed:.2f}s)")
 
                         # Convert results list to string for the response generator
-                        import json
                         results_str = json.dumps(results, indent=2, default=str) if results else "[]"
                         
                         response_start = time.time()
@@ -406,39 +397,59 @@ def main():
                         import traceback
                         traceback.print_exc()
                 else:
-                    # Scenario A or C: Use Rasa response
-                    # Check if Rasa is asking for more information (incomplete report)
-                    # vs providing a complete report
+                    # Type is NOT "invalid" - use FleetiReports response
                     
-                    rasa_final_response = rasa_response["response_text"]
-                    
-                    # Heuristic: If response contains questions or prompts asking for info, it's incomplete
-                    # Common patterns: "What vehicle", "What date", "Please provide", "I need", etc.
-                    asking_patterns = [
-                        "what vehicle", "what date", "please provide", "i need", 
-                        "which vehicle", "which date", "tell me", "give me",
-                        "what plate", "what date range", "for which", "should i use"
-                    ]
-                    
-                    is_asking_for_info = any(pattern in rasa_response_text for pattern in asking_patterns)
-                    
-                    print(f"\nResponse: {rasa_final_response}")
-                    print(f"⏱️  Rasa processing completed in {rasa_elapsed:.2f}s (Total: {total_elapsed:.2f}s)\n")
-                    
-                    # Save Rasa response as fleet message
-                    # Scenario A (complete report) or Scenario C (asking for more info)
-                    history_saver.save_fleet_message(
-                        user_input=user_message,
-                        refined_message=refined_message,
-                        selected_collections=[],  # No collections for Rasa reports
-                        query="",  # No query for Rasa reports
-                        query_response=[],  # No query response for Rasa reports
-                        human_response=rasa_final_response
-                    )
-                    
-                    # Update classifier history
-                    if classifier.conversation_history:
-                        classifier.conversation_history[-1]["assistant"] = rasa_final_response
+                    # Check if message field is not empty - this IS the final response
+                    if response_message and response_message.strip():
+                        final_response = response_message
+                        print(f"\nResponse: {final_response}")
+                        print(f"⏱️  FleetiReports processing completed in {fleeti_elapsed:.2f}s (Total: {total_elapsed:.2f}s)\n")
+                        
+                        # Save FleetiReports response as fleet message
+                        history_saver.save_fleet_message(
+                            user_input=user_message,
+                            refined_message=refined_message,
+                            selected_collections=[],
+                            query="",
+                            query_response=[],
+                            human_response=final_response
+                        )
+                        
+                        # Update classifier history
+                        if classifier.conversation_history:
+                            classifier.conversation_history[-1]["assistant"] = final_response
+                    else:
+                        # Message is empty - check api_response data
+                        # If api_response.data.data is empty, tell user we couldn't find anything
+                        api_data = None
+                        if api_response_data and isinstance(api_response_data, dict):
+                            inner_data = api_response_data.get("data")
+                            if inner_data and isinstance(inner_data, dict):
+                                api_data = inner_data.get("data")
+                        
+                        if not api_data or (isinstance(api_data, list) and len(api_data) == 0):
+                            # No data found - return user-friendly message
+                            final_response = "I couldn't find any data matching your request."
+                        else:
+                            # Has data - use api_response + type as final response (raw JSON)
+                            final_response_data = {
+                                "type": response_type,
+                                "api_response": api_response_data
+                            }
+                            final_response = json.dumps(final_response_data, indent=2, default=str)
+                        
+                        print(f"\nResponse:\n{final_response}")
+                        print(f"⏱️  FleetiReports processing completed in {fleeti_elapsed:.2f}s (Total: {total_elapsed:.2f}s)\n")
+                        
+                        # Save FleetiReports response as fleet message
+                        history_saver.save_fleet_message(
+                            user_input=user_message,
+                            refined_message=refined_message,
+                            selected_collections=[],
+                            query="",
+                            query_response=api_response_data if api_response_data else [],
+                            human_response=final_response
+                        )
                 continue
         except KeyboardInterrupt:
             print("\n\nGoodbye!")

@@ -20,7 +20,7 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.so
-
+frontend/
 # Text files
 
 # Environment variables

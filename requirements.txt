@@ -13,18 +13,26 @@ rank-bm25>=0.2.2
 loguru>=0.7.0
 json5 
 pyyaml
+pytz>=2019.1,<2023.0
 
+
+# fleeti reports
+# pymongo==4.6.1
+httpx==0.26.0
+pydantic==2.6.0
+pydantic-settings==2.1.0
+pymongo[srv,tls]>=3.8,<4.4
 
 # RASA COMPONENT
-requests>=2.31.0
-regex>=2020.6,<2022.11
-pytz>=2019.1,<2023.0
-dateparser==1.1.8
-pymongo[srv,tls]>=3.8,<4.4
-dnspython==2.3.0
-python-dateutil>=2.8,<2.9
-rasa==3.6.21
-rasa-sdk==3.6.2
+# requests>=2.31.0
+# regex>=2020.6,<2022.11
+# pytz>=2019.1,<2023.0
+# dateparser==1.1.8
+# pymongo[srv,tls]>=3.8,<4.4
+# dnspython==2.3.0
+# python-dateutil>=2.8,<2.9
+# rasa==3.6.21
+# rasa-sdk==3.6.2
 
 # numpy at the end to avoid conflicts
 numpy>=1.23.0

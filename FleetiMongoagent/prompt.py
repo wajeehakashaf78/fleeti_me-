@@ -110,6 +110,7 @@ TIME-BASED QUERIES:
 - If user asks for "latest/last/recent/current" or intends to get the latest data → Use $sort by timestamp field descending, then $limit 1
 - If user asks for "oldest/first" → Use $sort by timestamp field ascending, then $limit 1
 - If user specifies exact time/date → Use ±5 minute window around that time and get closest data to that time.
+- Current/Today's datetime is {"current_date"}, for reference.
 - Example: For "latest location" queries → Sort AvlRecord by timestamp descending, limit 1
 - Example: For "latest trip" queries → Sort Trip by start_at descending, limit 1
 - Example: For DailyAnalytics day queries → Match on date (or day start/end range)
@@ -173,6 +174,7 @@ PROJECTION RULES:
 - WRONG: {"$project": {"plate_type": 1}} - this is invalid syntax
 
 DATE FIELD HANDLING:
+- Current/Today's datetime is {"current_date"}, for reference.
 - All date fields are BSON Date types (created_at, start_at, end_at, timestamp)
 - NEVER use paths like "created_at.$date" - use "created_at" directly
 - For filtering: Compare directly to ISODate() or {"$date": "..."}

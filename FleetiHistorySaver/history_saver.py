@@ -20,7 +20,12 @@ class FleetiHistorySaver:
     One document per session, with messages array.
     """
     
-    def __init__(self, session_id: str = "default_session", sub_tenant_id: str = ""):
+    def __init__(
+        self,
+        session_id: str = "default_session",
+        sub_tenant_id: str = "",
+        mongo_db: Optional[str] = None,
+    ):
         """
         Initialize the history saver.
         
@@ -29,13 +34,14 @@ class FleetiHistorySaver:
             sub_tenant_id: Sub-tenant ID to associate with this session
         """
         mongo_uri = os.getenv("MONGO_URI")
-        mongo_db = os.getenv("MONGO_DB")
+        resolved_mongo_db = mongo_db or os.getenv("MONGO_DB")
         
-        if not mongo_uri or not mongo_db:
-            raise RuntimeError("MONGO_URI and MONGO_DB must be set in .env")
+        if not mongo_uri or not resolved_mongo_db:
+            raise RuntimeError("MONGO_URI must be set and mongo_db must be provided (or MONGO_DB set in .env)")
         
         self.client = MongoClient(mongo_uri)
-        self.db = self.client[mongo_db]
+        self.db = self.client[resolved_mongo_db]
+        self.db_name = resolved_mongo_db
         self.session_id = session_id
         self.sub_tenant_id = sub_tenant_id
         self.collection_name = "FleetiMessages"

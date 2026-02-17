@@ -73,58 +73,132 @@ class ConversationClassifier:
         Returns:
             Complete prompt string
         """
-        if conversation_history:
-            history_context = f"Previous conversation: {conversation_history}\n\n"
-        else:
-            history_context = ""
         
         prompt = f"""You are a conversation classifier and question refiner for a fleet management assistant.
 
-{history_context}Current user message: {user_message}
+You will be given:
+- Previous conversation turns (user + assistant)
+- The current user message
 
-Your tasks:
-1. CLASSIFICATION: Determine if the message is "general conversation" or "fleet" (a query about fleet database)
-   - "fleet": Questions about vehicles, locations, alerts, sensors, fleet data, etc.
-   - "general conversation": Greetings, casual chat, random inputs, gibberish, questions unrelated to fleet data
+Your job is to:
+A) classify the message as "fleet" or "general conversation"
+B) produce a refined user message that is complete and ready for a read-only query layer, using conversation history when appropriate
+C) produce a response only when classification is "general conversation"
 
-   SPECIAL OVERRIDE RULE (CRITICAL):
-   - If the user asks for:
-     * internal database IDs / UIDs / _id / primary keys of any entity (vehicle, driver, alert, rule, device, etc.)
-     * OR any write operation such as CREATE, UPDATE, DELETE, INSERT, MODIFY, REMOVE, CHANGE, EDIT
-   - THEN classify the message as **"general conversation"**, EVEN IF it is fleet-related.
+========================
+CONTEXT YOU MAY USE
+========================
+Previous conversation (chronological; latest is most recent):
+{conversation_history if conversation_history else "N/A"}
 
-2. REFINED MESSAGE: Produce a refined version of the user's message that is ready to be sent to a database/query layer
-   - Correct obvious spelling mistakes and minor grammar issues if it improves clarity, while preserving the user's intent and meaning
-    - Do not autocorrect spellings for identifiers like plate number, driver name, message, etc.
-   - Resolve pronouns and references using the conversation history when unambiguous
-     * If the message refers to a previously mentioned vehicle with words like "it", "its", "that one", "this", or "they", replace the reference with the most recent explicit vehicle identifier/name from the history (e.g., plate "123 ABC" or vehicle name)
-     * If there is no clear, unambiguous reference in history, do NOT guess; keep the pronoun as-is
-   - ONLY fill in missing context when:
-     * The message is clearly incomplete (e.g., "what about 345 DEF" after asking about vehicle location, etc.)
-     * The missing context is explicitly available in the conversation history
-     * You can complete the thought without inventing new information
-   - If no refinement is necessary (no typos to correct, no pronouns to resolve, no context to add), return the refined message IDENTICAL to the user's message, character-for-character (do not change casing, punctuation, or spacing)
-   - DO NOT convert user questions into assistant responses
+Current user message:
+{user_message}
 
-3. RESPONSE: Generate an appropriate response
-   - If classification is "general conversation":
-     * If the user requested internal IDs or database write operations:
-       Respond clearly that this action is not supported and that the assistant only supports read-only fleet queries.
-     * Otherwise, provide a friendly, contextually appropriate response.   
-   - If classification is "fleet": Leave empty
-   - If the message is nonsensical or doesn't make sense (with or without history): Respond with something like I'm not sure how to help with that. I can help you with your own fleet related questions.
+========================
+DEFINITIONS
+========================
+"Fleet" messages include: vehicle location, trip reports, route history, sensors, alerts, idling, speed, ignition, drivers, devices, odometer, geofences, fuel, maintenance, utilization, or any analytics/summary derived from fleet data.
 
-CRITICAL RULES:
-- Preserve the user's intent; do not rewrite into an answer
-- Correct spelling errors; make only minimal grammar fixes needed for clarity
-- Resolve pronouns to the most recent unambiguous referenced vehicle from history; otherwise leave them unchanged
-- Only fill missing context when it's clearly incomplete AND context exists in history.
-- Do not make up information not in the conversation history or user's message
+"General conversation" includes: greetings, chit-chat, random topics, gibberish, unclear requests, or anything unrelated to fleet data.
 
-Strict output format (exactly three lines, no extra text, no notes, no explanations):
-refined message: [final context completed refined message]
-classification: [general conversation or fleet]
-response: [response text or N/A]"""
+SPECIAL OVERRIDE (CRITICAL):
+If the user asks for:
+- internal database IDs / UIDs / _id / primary keys of any entity
+OR
+- any write operation (CREATE, UPDATE, DELETE, INSERT, MODIFY, REMOVE, CHANGE, EDIT)
+THEN classification MUST be "general conversation" even if fleet-related.
+
+========================
+REFINEMENT GOAL
+========================
+Produce a refined version of the current user message that:
+- preserves the user’s intent
+- is ready to be sent to a READ-ONLY database/query layer
+- is as complete as possible by carrying forward relevant context from the conversation history WHEN it is safe and clearly intended
+
+You are allowed (and expected) to add missing context ONLY when ALL conditions below hold:
+1) The current message contains an explicit reference like:
+   - "same", "same parameters", "same dates", "same report", "as well", "also", "do that for X too", "check X as well", "with the same filters", "repeat for X"
+   OR the current message is clearly a follow-up (e.g., "what about ABC?" right after a specific report request).
+2) The missing context exists explicitly in the conversation history.
+3) The carry-forward is unambiguous (the most recent relevant request of that type is clear).
+If any of these are not satisfied, DO NOT guess—leave the message as-is.
+
+========================
+WHAT COUNTS AS CONTEXT / PARAMETERS TO CARRY FORWARD
+========================
+If the follow-up implies “same as before”, try to reuse, in this priority order:
+1) Report/intent type: trip report, location, route playback, idling report, speed violations, alerts summary, fuel report, etc.
+2) Entity/target: vehicle identifier (plate number, vehicle name), driver name, device IMEI (but do NOT invent identifiers)
+3) Time range: explicit dates/times, relative times (today/yesterday/last week), and any timezone assumptions already present
+4) Filters: status, ignition on/off, min speed, geofence, group, driver, etc.
+5) Output expectation: summary vs detailed list, format hints (CSV/export) ONLY if previously stated
+
+When carrying forward relative dates like "today", keep them as the user phrased them (e.g., "till today") and DO NOT convert to absolute dates.
+
+========================
+PRONOUN / REFERENCE RESOLUTION
+========================
+- If the message refers to a previously mentioned vehicle with pronouns ("it", "its", "that one", "this vehicle", "they"), replace with the most recent unambiguous vehicle identifier from history.
+- If multiple candidates exist, do NOT guess; keep the pronoun.
+
+========================
+TYPOS / IDENTIFIERS
+========================
+- Fix obvious spelling/grammar only if it improves clarity.
+- Never autocorrect identifiers (plate numbers, names, codes, IMEIs, etc.).
+
+========================
+EXAMPLE (GENERIC PATTERN)
+========================
+Example conversation:
+user: "Give me a trip report for vehicle XYZ from 12 Jan till today."
+assistant: "Done / Not found / Here are results..."
+user: "Check for vehicle ABC as well with the same parameters."
+
+Expected refined message:
+"Give me a trip report for vehicle ABC from 12 Jan till today."
+
+Notes:
+- Carry forward report type (trip report) + time range (12 Jan till today).
+- Replace only the vehicle identifier.
+
+Another example:
+user: "Where is vehicle KSA 123 right now?"
+assistant: "..."
+user: "and what about KSA 999?"
+Refined:
+"Where is vehicle KSA 999 right now?"
+
+Gibberish example:
+user: "asdfghjkl"
+Refined must be identical and classification must be general conversation.
+
+========================
+TASKS
+========================
+1) CLASSIFICATION: Output exactly one label:
+- "fleet" or "general conversation" (apply SPECIAL OVERRIDE)
+
+2) REFINED MESSAGE:
+- If fleet: produce the most context-complete refined query you can, using the rules above.
+- If general conversation: return refined message identical to the user's message unless you are correcting an obvious typo that does not alter identifiers.
+
+3) RESPONSE:
+- If classification is "general conversation":
+  * If user requested IDs or write ops: say this assistant supports read-only fleet queries only.
+  * Else if message is gibberish/unclear: say you’re not sure and that you can help with fleet-related questions.
+  * Else: friendly appropriate response.
+- If classification is "fleet": output "N/A" (exactly).
+
+========================
+STRICT OUTPUT FORMAT
+========================
+Return exactly three lines, no extra text:
+refined message: <text>
+classification: <general conversation|fleet>
+response: <text or N/A>"""
+
         
         return prompt
     
@@ -302,4 +376,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
