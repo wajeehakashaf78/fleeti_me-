@@ -336,14 +336,14 @@ def _replace_date_strings_with_isodate(query_str: str) -> str:
 # ---------------------------
 
 class LlmMongoRunner:
-    def __init__(self):
+    def __init__(self, mongo_db: str = None, mongo_uri: str = None):
         load_dotenv()
-        mongo_uri = os.getenv("MONGO_URI")
-        mongo_db = os.getenv("MONGO_DB")
-        if not mongo_uri or not mongo_db:
-            raise RuntimeError("MONGO_URI and MONGO_DB must be set in .env")
-        self.client = MongoClient(mongo_uri)
-        self.db = self.client[mongo_db]
+        resolved_mongo_uri = mongo_uri or os.getenv("MONGO_URI")
+        resolved_mongo_db = mongo_db or os.getenv("MONGO_DB")
+        if not resolved_mongo_uri or not resolved_mongo_db:
+            raise RuntimeError("MONGO_URI and mongo_db must be provided (or MONGO_DB set in .env)")
+        self.client = MongoClient(resolved_mongo_uri)
+        self.db = self.client[resolved_mongo_db]
 
     def run(self, raw_response: str, limit: int = 50) -> List[Dict[str, Any]]:
         """

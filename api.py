@@ -391,13 +391,8 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(defau
                     for pattern, replacement in patterns:
                         mongoagent_response = re.sub(pattern, replacement, mongoagent_response)
                     
-                    # Step 3: Execute query with dynamic mongo_db
-                    # Create a new query runner instance with the specified database
-                    query_runner = LlmMongoRunner()
-                    
-                    # Temporarily switch to the requested database
-                    original_db = query_runner.db
-                    query_runner.db = query_runner.client[mongo_db]
+                    # Step 3: Execute query with dynamic mongo_db from JWT
+                    query_runner = LlmMongoRunner(mongo_db=mongo_db)
                     
                     try:
                         results = query_runner.run(mongoagent_response, limit=10)
@@ -432,10 +427,6 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(defau
                             human_response=f"I encountered an error while querying the database: {str(query_error)}",
                             error=True
                         )
-                    
-                    finally:
-                        # Restore original database
-                        query_runner.db = original_db
             else:
                 # Type is NOT "invalid" - use FleetiReports response
 
