@@ -461,11 +461,30 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(defau
                     )
                     api_response_data = processing_result.get("api_response")
 
-                    # For reports, always return structured response
-                    final_response = {
-                        "type": response_type,
-                        "api_response": api_response_data
-                    }
+                    # If report API returns empty items list, return text response instead of JSON
+                    api_data_wrapper = api_response_data.get("data") if isinstance(api_response_data, dict) else None
+                    nested_data = api_data_wrapper.get("data") if isinstance(api_data_wrapper, dict) else None
+                    # Support both shapes:
+                    # 1) api_response.data.items
+                    # 2) api_response.data.data.items
+                    api_items = None
+                    if isinstance(api_data_wrapper, dict) and isinstance(api_data_wrapper.get("items"), list):
+                        api_items = api_data_wrapper.get("items")
+                    elif isinstance(nested_data, dict) and isinstance(nested_data.get("items"), list):
+                        api_items = nested_data.get("items")
+                    if isinstance(api_items, list) and len(api_items) == 0:
+                        report_results_str = json.dumps(api_response_data, indent=2, default=str) if api_response_data else "{}"
+                        final_response = generate_human_response(
+                            request.user_input,
+                            refined_message,
+                            report_results_str
+                        )
+                    else:
+                        # Default report behavior: return structured response
+                        final_response = {
+                            "type": response_type,
+                            "api_response": api_response_data
+                        }
 
                     # Save FleetiReports response as fleet message
                     history_saver.save_fleet_message(

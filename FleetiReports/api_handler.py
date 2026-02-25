@@ -24,6 +24,13 @@ class APIHandler:
         if self.access_token.lower().startswith("bearer "):
             self.access_token = self.access_token.split(" ", 1)[1].strip()
         self.timeout = timeout  # seconds timeout
+        self.default_page = 1
+        self.default_size = 10
+
+    def _add_pagination(self, payload: Dict[str, Any], page: int = 1, size: int = 10) -> Dict[str, Any]:
+        payload["page"] = page
+        payload["size"] = size
+        return payload
     
     def _get_headers(self) -> Dict[str, str]:
         """Get headers for API requests"""
@@ -54,7 +61,9 @@ class APIHandler:
     async def call_report_api(
         self, 
         endpoint: str, 
-        payload: Dict[str, Any]
+        payload: Dict[str, Any],
+        report_type: Optional[str] = None,
+        request_only_log: bool = False
     ) -> Dict[str, Any]:
         """
         Call report API endpoint
@@ -69,11 +78,17 @@ class APIHandler:
         try:
             url = f"{self.base_url}{endpoint}"
             
-            print(f"\n--- External API Call ---")
-            print(f"URL: {url}")
-            print(f"Method: POST")
-            print(f"Headers: Authorization: Bearer {self.access_token[:20]}...")
-            print(f"Payload: {payload}")
+            if request_only_log:
+                print("\n--- Report Request ---")
+                print(f"Type: {report_type or endpoint}")
+                print(f"URL: {url}")
+                print(f"Payload: {payload}")
+            else:
+                print(f"\n--- External API Call ---")
+                print(f"URL: {url}")
+                print(f"Method: POST")
+                print(f"Headers: Authorization: Bearer {self.access_token[:20]}...")
+                print(f"Payload: {payload}")
             
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 response = await client.post(
@@ -86,9 +101,10 @@ class APIHandler:
                 
                 response_data = response.json()
                 
-                print(f"\n--- API Response ---")
-                print(f"Status Code: {response.status_code}")
-                print(f"Response Data: {response_data}")
+                if not request_only_log:
+                    print(f"\n--- API Response ---")
+                    print(f"Status Code: {response.status_code}")
+                    print(f"Response Data: {response_data}")
                 
                 return {
                     "success": True,
@@ -97,25 +113,28 @@ class APIHandler:
                 }
                 
         except httpx.HTTPStatusError as e:
-            print(f"\n--- API Error ---")
-            print(f"HTTP Status Error: {e.response.status_code}")
-            print(f"Response: {e.response.text}")
+            if not request_only_log:
+                print(f"\n--- API Error ---")
+                print(f"HTTP Status Error: {e.response.status_code}")
+                print(f"Response: {e.response.text}")
             return {
                 "success": False,
                 "error": f"HTTP error: {e.response.status_code}",
                 "details": str(e)
             }
         except httpx.RequestError as e:
-            print(f"\n--- API Error ---")
-            print(f"Request Error: {str(e)}")
+            if not request_only_log:
+                print(f"\n--- API Error ---")
+                print(f"Request Error: {str(e)}")
             return {
                 "success": False,
                 "error": "Request error",
                 "details": str(e)
             }
         except Exception as e:
-            print(f"\n--- API Error ---")
-            print(f"Unexpected Error: {str(e)}")
+            if not request_only_log:
+                print(f"\n--- API Error ---")
+                print(f"Unexpected Error: {str(e)}")
             return {
                 "success": False,
                 "error": "Unexpected error",
@@ -137,50 +156,76 @@ class APIHandler:
         }
         return await self.call_report_api("/fetch-dates", payload)
     
-    async def fetch_fleet_summary(self, asset_ids: str) -> Dict[str, Any]:
+    async def fetch_fleet_summary(self, asset_ids: str, page: int = 1, size: int = 10) -> Dict[str, Any]:
         """Fetch Fleet Summary Report"""
-        payload = {"AssetIds": asset_ids}
-        return await self.call_report_api("/fleet-summary", payload)
+        payload = self._add_pagination({"AssetIds": asset_ids}, page=page, size=size)
+        return await self.call_report_api(
+            "/fleet-summary",
+            payload,
+            report_type="FleetSummary",
+            request_only_log=True
+        )
     
     async def fetch_fleet_performance_summary(
         self, 
         asset_ids: str, 
         start_date: str, 
-        end_date: str
+        end_date: str,
+        page: int = 1,
+        size: int = 10
     ) -> Dict[str, Any]:
         """Fetch Fleet Performance Summary Report"""
-        payload = {
+        payload = self._add_pagination({
             "StartDate": start_date,
             "EndDate": end_date,
             "AssetIds": asset_ids
-        }
-        return await self.call_report_api("/fleet-performance-summary", payload)
+        }, page=page, size=size)
+        return await self.call_report_api(
+            "/fleet-performance-summary",
+            payload,
+            report_type="FleetPerformanceSummary",
+            request_only_log=True
+        )
     
     async def fetch_sim_report(
         self, 
         asset_ids: str, 
         start_date: str, 
-        end_date: str
+        end_date: str,
+        page: int = 1,
+        size: int = 10
     ) -> Dict[str, Any]:
         """Fetch SIM Report"""
-        payload = {
+        payload = self._add_pagination({
             "StartDate": start_date,
             "EndDate": end_date,
             "AssetIds": asset_ids
-        }
-        return await self.call_report_api("/sim", payload)
+        }, page=page, size=size)
+        return await self.call_report_api(
+            "/sim",
+            payload,
+            report_type="SIM",
+            request_only_log=True
+        )
     
     async def fetch_utilization_report(
         self, 
         start_date: str, 
-        end_date: str
+        end_date: str,
+        page: int = 1,
+        size: int = 10
     ) -> Dict[str, Any]:
         """Fetch Utilization/Work Hour Report"""
-        payload = {
+        payload = self._add_pagination({
             "StartDate": start_date,
             "EndDate": end_date
-        }
-        return await self.call_report_api("/utilization", payload)
+        }, page=page, size=size)
+        return await self.call_report_api(
+            "/utilization",
+            payload,
+            report_type="Utilization",
+            request_only_log=True
+        )
     
     async def fetch_generic_report(
         self, 
