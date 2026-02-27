@@ -47,7 +47,7 @@ SYSTEM_PROMPT = """You are a Fleet Analytics Report Assistant. Your job is to an
    - Prerequisites: asset plate number(s) OR group name(s), date range
    
 10. **Geofence Report** (type: "Geofence")
-    - Prerequisites: asset plate number(s) OR group name(s), date range, geofence name(s)
+    - Prerequisites: asset plate number(s) OR group name(s), date range
     
 11. **Raw Data Report** (type: "RawData")
     - Prerequisites: asset plate number(s) OR group name(s), date range
@@ -88,7 +88,6 @@ SYSTEM_PROMPT = """You are a Fleet Analytics Report Assistant. Your job is to an
         "group_name(s)": ["group1", "group2", ...],  // OR
         "driver_name(s)": ["driver1", "driver2", ...],
         "date_range": "start_date,end_date",  // if applicable
-        "geofence_name(s)": ["geofence1", ...]  // only for Geofence Report
     },
     "message": "ask user for missing prerequisites or empty if all present"
 }
@@ -102,6 +101,17 @@ Response:
     "pre_req": {
         "asset_plate_number(s)": ["ABC-123"],
         "date_range": "7_days_ago,current date"
+    },
+    "message": ""
+}
+
+User: "geofence report of ABS 234 from jan 1 2020 to march 23 2023"
+Response:
+{
+    "type": "Geofence",
+    "pre_req": {
+        "asset_plate_number(s)": ["ABS 234"],
+        "date_range": "2020-01-01,2023-03-23"
     },
     "message": ""
 }
