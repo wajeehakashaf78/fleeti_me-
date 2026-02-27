@@ -69,7 +69,9 @@ def _build_reports_conversation_history(session_doc: Optional[Dict[str, Any]]) -
     if not session_doc:
         return []
     history: List[Dict[str, str]] = []
-    for msg in session_doc.get("messages", []):
+    typed_messages = [m for m in session_doc.get("messages", []) if m.get("type") in ("general", "fleet")]
+    # Only pass the most recent 5 typed messages to the reports LLM.
+    for msg in typed_messages[-5:]:
         msg_type = msg.get("type")
         if msg_type == "general":
             user_content = msg.get("user_input", "")
@@ -250,7 +252,7 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(defau
         # Load existing conversation history (excludes static message)
         existing_history = history_saver.load_session_history()
         if existing_history:
-            classifier.conversation_history = existing_history
+            classifier.conversation_history = existing_history[-10:]
 
         # Process message through classifier
         refined_message, classification, llm_response = classifier.process_message(request.user_input)
@@ -295,6 +297,40 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(defau
             session_doc = history_saver.get_session_document()
             reports_history = _build_reports_conversation_history(session_doc)
             report_llm_response = llm_agent.process_user_input(refined_message, reports_history)
+
+            def _is_empty_pre_req(pre_req_obj: Any) -> bool:
+                if pre_req_obj is None:
+                    return True
+                return (
+                    not getattr(pre_req_obj, "asset_plate_numbers", None)
+                    and not getattr(pre_req_obj, "group_names", None)
+                    and not getattr(pre_req_obj, "driver_names", None)
+                    and not getattr(pre_req_obj, "date_range", None)
+                    and not getattr(pre_req_obj, "geofence_names", None)
+                )
+
+            # Fallback retry: if report type is recognized but prerequisites are missing,
+            # retry without history to reduce context pollution.
+            if (
+                report_llm_response
+                and report_llm_response.type
+                and report_llm_response.type.lower() != "invalid"
+                and _is_empty_pre_req(report_llm_response.pre_req)
+            ):
+                retry_response = llm_agent.process_user_input(refined_message, None)
+                if retry_response and not _is_empty_pre_req(retry_response.pre_req):
+                    report_llm_response = retry_response
+
+            print("\n--- Report LLM Response ---")
+            if report_llm_response:
+                try:
+                    print(json.dumps(report_llm_response.model_dump(), indent=2, default=str))
+                except Exception:
+                    print(f"type: {getattr(report_llm_response, 'type', None)}")
+                    print(f"pre_req: {getattr(report_llm_response, 'pre_req', None)}")
+                    print(f"message: {getattr(report_llm_response, 'message', None)}")
+            else:
+                print("None")
 
             response_type = report_llm_response.type if report_llm_response else "invalid"
             response_message = report_llm_response.message if report_llm_response else ""
@@ -460,8 +496,22 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(defau
                         reports_api_handler
                     )
                     api_response_data = processing_result.get("api_response")
+                    mongodb_query_result = processing_result.get("mongodb_query_result")
 
-                    # If report API returns empty result set, return text response instead of JSON
+                    # If report API failed or returned empty result set, return text response instead of JSON
+                    is_report_api_failure = (
+                        isinstance(api_response_data, dict)
+                        and api_response_data.get("success") is False
+                    )
+                    is_asset_or_driver_not_found = (
+                        api_response_data is None
+                        and isinstance(mongodb_query_result, dict)
+                        and mongodb_query_result.get("success") is True
+                        and (
+                            ("asset_ids" in mongodb_query_result and len(mongodb_query_result.get("asset_ids") or []) == 0)
+                            or ("driver_ids" in mongodb_query_result and len(mongodb_query_result.get("driver_ids") or []) == 0)
+                        )
+                    )
                     api_data_wrapper = api_response_data.get("data") if isinstance(api_response_data, dict) else None
                     nested_data = api_data_wrapper.get("data") if isinstance(api_data_wrapper, dict) else None
                     # Support these empty-data shapes:
@@ -476,8 +526,9 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(defau
                     elif isinstance(nested_data, list):
                         is_empty_report_data = len(nested_data) == 0
 
-                    if is_empty_report_data:
-                        report_results_str = json.dumps(api_response_data, indent=2, default=str) if api_response_data else "{}"
+                    if is_report_api_failure or is_empty_report_data or is_asset_or_driver_not_found:
+                        report_results_payload = api_response_data if api_response_data is not None else mongodb_query_result
+                        report_results_str = json.dumps(report_results_payload, indent=2, default=str) if report_results_payload else "{}"
                         final_response = generate_human_response(
                             request.user_input,
                             refined_message,

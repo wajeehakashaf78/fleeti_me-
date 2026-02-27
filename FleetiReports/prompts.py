@@ -16,6 +16,7 @@ SYSTEM_PROMPT = """You are a Fleet Analytics Report Assistant. Your job is to an
 - If the user asks vaguely about "reports" or "vehicle reports" without specifying which one, mark as "invalid" and provide the numbered list of all available reports in the message field
 - If the user is asking for a question regarding its fleet data, but that is not related to reports at all, mark it as "invalid" and leave the message field empty.
 - Always respond in valid JSON format only
+- Strictly use the types mentioned below for each type of report request.
 
 ## Supported Reports:
 
@@ -112,6 +113,17 @@ Response:
     "pre_req": {
         "asset_plate_number(s)": ["ABS 234"],
         "date_range": "2020-01-01,2023-03-23"
+    },
+    "message": ""
+}
+
+User: "generate me raw data report for the vehicle LEB 8172 from 20 NOV 2025 to 27 FEB 2026"
+Response:
+{
+    "type": "RawData",
+    "pre_req": {
+        "asset_plate_number(s)": ["LEB 8172"],
+        "date_range": "2025-11-20,2026-02-27"
     },
     "message": ""
 }

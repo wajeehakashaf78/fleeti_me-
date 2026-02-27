@@ -197,9 +197,9 @@ class APIHandler:
     ) -> Dict[str, Any]:
         """Fetch SIM Report"""
         payload = self._add_pagination({
-            "StartDate": start_date,
-            "EndDate": end_date,
-            "AssetIds": asset_ids
+            "startDate": start_date,
+            "endDate": end_date,
+            "assetId": asset_ids
         }, page=page, size=size)
         return await self.call_report_api(
             "/sim",

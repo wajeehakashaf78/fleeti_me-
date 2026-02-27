@@ -4,6 +4,7 @@ Executes MongoDB queries to fetch asset and driver information
 """
 
 from typing import List, Dict, Any
+import re
 from pymongo import MongoClient
 from pymongo.errors import PyMongoError
 from .config import settings
@@ -16,6 +17,37 @@ class MongoDBHandler:
     def __init__(self):
         """Initialize MongoDB client"""
         self.client = MongoClient(settings.MONGO_URI)
+
+    def _normalize_plate(self, plate: str) -> str:
+        """Normalize plate by removing separators and uppercasing."""
+        if not plate:
+            return ""
+        return re.sub(r"[^A-Za-z0-9]", "", plate).upper()
+
+    def _build_plate_variants(self, plate_numbers: List[str]) -> List[str]:
+        """
+        Build normalized matching variants for each plate.
+        Example:
+        - LED 4556 -> LED4556, 4556LED
+        - 4556-LED -> 4556LED, LED4556
+        """
+        variants = set()
+        for plate in plate_numbers or []:
+            if not plate:
+                continue
+            normalized = self._normalize_plate(plate)
+            if normalized:
+                variants.add(normalized)
+
+            tokens = [t.upper() for t in re.findall(r"[A-Za-z0-9]+", plate)]
+            if len(tokens) >= 2:
+                forward = "".join(tokens)
+                reverse = "".join(reversed(tokens))
+                if forward:
+                    variants.add(forward)
+                if reverse:
+                    variants.add(reverse)
+        return list(variants)
     
     def get_asset_ids_by_plate_numbers(
         self, 
@@ -34,12 +66,38 @@ class MongoDBHandler:
         """
         try:
             db = self.client[db_name]
+            normalized_variants = self._build_plate_variants(plate_numbers)
             
             # Execute aggregation query
             pipeline = [
                 {
+                    "$addFields": {
+                        "_normalized_plate": {
+                            "$toUpper": {
+                                "$replaceAll": {
+                                    "input": {
+                                        "$replaceAll": {
+                                            "input": {
+                                                "$replaceAll": {
+                                                    "input": "$details.plate_number",
+                                                    "find": " ",
+                                                    "replacement": ""
+                                                }
+                                            },
+                                            "find": "-",
+                                            "replacement": ""
+                                        }
+                                    },
+                                    "find": "_",
+                                    "replacement": ""
+                                }
+                            }
+                        }
+                    }
+                },
+                {
                     "$match": {
-                        "details.plate_number": {"$in": plate_numbers}
+                        "_normalized_plate": {"$in": normalized_variants}
                     }
                 },
                 {
@@ -53,6 +111,7 @@ class MongoDBHandler:
             print(f"\n--- MongoDB Query (Asset by Plate Numbers) ---")
             print(f"Database: {db_name}")
             print(f"Collection: Asset")
+            print(f"Normalized Variants: {normalized_variants}")
             print(f"Pipeline: {pipeline}")
             
             results = list(db.Asset.aggregate(pipeline))
