@@ -169,7 +169,7 @@ async def process_report_request(
             api_response = await api_handler.fetch_utilization_report(start_date, end_date)
             result["api_response"] = api_response
     
-    elif report_type == "DrivingBehaviour":
+    elif report_type == "DriverBehaviour":
         if driver_ids and start_date and end_date:
             api_response = await api_handler.fetch_generic_report(
                 report_type, driver_ids=driver_ids, start_date=start_date, end_date=end_date

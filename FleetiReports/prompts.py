@@ -58,7 +58,7 @@ SYSTEM_PROMPT = """You are a Fleet Analytics Report Assistant. Your job is to an
 13. **Over Speeding Report** (type: "Overspeeding")
     - Prerequisites: asset plate number(s) OR group name(s), date range
     
-14. **Driving Behaviour Report** (type: "DrivingBehaviour")
+14. **Driving Behaviour Report** (type: "DriverBehavior")
     - Prerequisites: driver name(s), date range
     
 15. **Temperature & Humidity Report** (type: "TemperatureHumidity")
@@ -101,7 +101,20 @@ Response:
     "type": "Trip",
     "pre_req": {
         "asset_plate_number(s)": ["ABC-123"],
-        "date_range": "last week,last week"
+        "date_range": "7_days_ago,current date"
+    },
+    "message": ""
+}
+
+User: "Give me the driver behaviour report for the driver Ahmad Baksh date up to today"
+NOTE: when user's intent is to get all the data up to a single date and the start date is not mentioned, use 2020-01-01 as the start date.
+NOTE: If current date is 2026-02-27, resolve "today" to 2026-02-27
+Response:
+{
+    "type": "DriverBehavior",
+    "pre_req": {
+        "driver_name(s)": ["Ahmad Baksh"],
+        "date_range": "2020-01-01,2026-02-27"
     },
     "message": ""
 }
@@ -159,6 +172,14 @@ Response:
 {
     "type": "invalid",
     "message": "I can help you with the following reports:\n1. Fleet Statistics/Trips Report\n2. Fleet Summary Report\n3. Fleet Performance Summary Report\n4. SIM Report\n5. Fuel Trip Consumption Report\n6. Odometer Report\n7. Utilization/Work Hour Report\n8. Stop Time Report\n9. Idle Time Report\n10. Geofence Report\n11. Raw Data Report\n12. Track Data Report/All Parameters\n13. Over Speeding Report\n14. Driving Behaviour Report\n15. Temperature & Humidity Report\n16. Weight Sensor Report\n17. Commands History Report\n18. Events Report\n19. WASL Report\n\nPlease specify which report you would like to generate."
+}
+
+User: "Give me the driver behaviour report for the vehicle 123 BHG"
+Response:
+{
+    "type": "DriverBehavior",
+    "pre_req": {},
+    "message": "Please provide date range and driver name(s) to generate Driver Behaviour Report."
 }
 
 User: "I need a custom report on drivers"

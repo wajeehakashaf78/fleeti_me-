@@ -253,7 +253,12 @@ class APIHandler:
         if asset_ids:
             payload["AssetIds"] = asset_ids
         if driver_ids:
-            payload["DriverIds"] = driver_ids
+            # Backend expects driver identifiers in AssetIds for driving behavior reports.
+            if report_type in ("DrivingBehaviour", "DriverBehaviour", "DriverBehavior"):
+                payload["AssetIds"] = driver_ids
+                payload.pop("DriverIds", None)
+            else:
+                payload["DriverIds"] = driver_ids
         if start_date:
             payload["StartDate"] = start_date
         if end_date:

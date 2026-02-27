@@ -156,7 +156,7 @@ async def _process_report_request(
     elif report_type == "Utilization":
         if start_date and end_date:
             result["api_response"] = await api_handler.fetch_utilization_report(start_date, end_date)
-    elif report_type == "DrivingBehaviour":
+    elif report_type in ("DriverBehaviour", "DrivingBehaviour", "DriverBehavior"):
         if driver_ids and start_date and end_date:
             result["api_response"] = await api_handler.fetch_generic_report(
                 report_type, driver_ids=driver_ids, start_date=start_date, end_date=end_date
@@ -461,18 +461,22 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(defau
                     )
                     api_response_data = processing_result.get("api_response")
 
-                    # If report API returns empty items list, return text response instead of JSON
+                    # If report API returns empty result set, return text response instead of JSON
                     api_data_wrapper = api_response_data.get("data") if isinstance(api_response_data, dict) else None
                     nested_data = api_data_wrapper.get("data") if isinstance(api_data_wrapper, dict) else None
-                    # Support both shapes:
-                    # 1) api_response.data.items
-                    # 2) api_response.data.data.items
-                    api_items = None
+                    # Support these empty-data shapes:
+                    # 1) api_response.data.items == []
+                    # 2) api_response.data.data.items == []
+                    # 3) api_response.data.data == []
+                    is_empty_report_data = False
                     if isinstance(api_data_wrapper, dict) and isinstance(api_data_wrapper.get("items"), list):
-                        api_items = api_data_wrapper.get("items")
+                        is_empty_report_data = len(api_data_wrapper.get("items")) == 0
                     elif isinstance(nested_data, dict) and isinstance(nested_data.get("items"), list):
-                        api_items = nested_data.get("items")
-                    if isinstance(api_items, list) and len(api_items) == 0:
+                        is_empty_report_data = len(nested_data.get("items")) == 0
+                    elif isinstance(nested_data, list):
+                        is_empty_report_data = len(nested_data) == 0
+
+                    if is_empty_report_data:
                         report_results_str = json.dumps(api_response_data, indent=2, default=str) if api_response_data else "{}"
                         final_response = generate_human_response(
                             request.user_input,
