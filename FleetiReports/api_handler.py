@@ -181,7 +181,7 @@ class APIHandler:
             "AssetIds": asset_ids
         }, page=page, size=size)
         return await self.call_report_api(
-            "/fleet-performance-summary",
+            "/fleet-performance",
             payload,
             report_type="FleetPerformanceSummary",
             request_only_log=True
