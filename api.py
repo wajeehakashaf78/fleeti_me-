@@ -11,7 +11,7 @@ import json
 import ast
 import re
 from typing import Optional, Dict, Any, List
-from datetime import datetime
+from datetime import datetime, timezone
 from dotenv import load_dotenv
 
 # Import all the components from main.py
@@ -339,6 +339,21 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(defau
                 if retry_response and not _is_empty_pre_req(retry_response.pre_req):
                     report_llm_response = retry_response
 
+            # Deterministic guardrail: FleetSummary must not require date range.
+            if report_llm_response and report_llm_response.type == "FleetSummary":
+                if report_llm_response.pre_req is not None:
+                    report_llm_response.pre_req.date_range = None
+                    has_asset_or_group = bool(
+                        report_llm_response.pre_req.asset_plate_numbers
+                        or report_llm_response.pre_req.group_names
+                    )
+                    if has_asset_or_group:
+                        report_llm_response.message = ""
+                    elif not report_llm_response.message or not report_llm_response.message.strip():
+                        report_llm_response.message = (
+                            "Please provide the asset plate number(s) or group name(s) for the Fleet Summary Report."
+                        )
+
             print("\n--- Report LLM Response ---")
             if report_llm_response:
                 try:
@@ -417,7 +432,14 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(defau
                                 selected_collections = []
                     
                     # Step 2: Generate MongoDB query via FleetiMongoagent
-                    full_prompt = prompt_blueprint.replace("{current_date}", datetime.now().strftime("%Y-%m-%d")).replace("{schemas}", schemas).replace("{refined_message}", refined_message)
+                    now_utc = datetime.now(timezone.utc)
+                    full_prompt = (
+                        prompt_blueprint
+                        .replace("{current_date}", now_utc.strftime("%Y-%m-%d"))
+                        .replace("{current_datetime_utc}", now_utc.strftime("%Y-%m-%dT%H:%M:%SZ"))
+                        .replace("{schemas}", schemas)
+                        .replace("{refined_message}", refined_message)
+                    )
                     mongoagent_response = mongoagent_orchistrator_main(full_prompt)
                     
                     if not mongoagent_response:

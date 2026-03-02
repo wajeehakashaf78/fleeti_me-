@@ -14,4 +14,4 @@ Fields:
 - status: string
 - sub_tenant_id: string
 - created_at: BSON Date
-
+- expiry_date: BSON Date

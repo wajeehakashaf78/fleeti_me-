@@ -2,6 +2,12 @@ PROMPT = """You are a MongoDB aggregation query generator. Your task is to creat
 
 CRITICAL: Return ONLY the aggregation query. No explanations, no comments, no markdown, no code blocks. Just the query.
 
+=== CURRENT DATE ===
+{current_date}
+
+=== CURRENT UTC DATETIME ===
+{current_datetime_utc}
+
 === DATABASE SCHEMA ===
 
 {schemas}
@@ -265,6 +271,20 @@ db.Asset.aggregate([
 {"$unwind": "$alerts"},
 {"$match": {"alerts.alert_info.alert_type": "geofence"}},
 {"$project": {"_id": 0,"plate_number": "$details.plate_number","alert_type": "$alerts.alert_info.alert_type","geofence_name": "$alerts.alert_info.name","timestamp": "$alerts.created_at","location": "$alerts.alert_info.location","status": "$alerts.alert_info.status"}}
+])
+
+Example 13: "which vehicles covered more than 10Km distance in the last week."
+Note: Distances are stored in meters in the database. Convert to the unit requested by the user (km here).
+Answer:
+db.Trip.aggregate([
+{"$match": {"driver_info.asset_id": {"$exists": true, "$nin": [null, ""]}, "distance_covered": {"$type": "number"}}},
+{"$match": {"$expr": {"$gte": ["$start_at", {"$dateSubtract": {"startDate": "$$NOW", "unit": "day", "amount": 7}}]}}},
+{"$group": {"_id": "$driver_info.asset_id", "totalMeters": {"$sum": "$distance_covered"}, "tripCount": {"$sum": 1}}},
+{"$match": {"totalMeters": {"$gt": 10000}}},
+{"$lookup": {"from": "Asset", "localField": "_id", "foreignField": "_id", "as": "asset"}},
+{"$unwind": {"path": "$asset", "preserveNullAndEmptyArrays": false}},
+{"$project": {"_id": 0, "plate_number": "$asset.details.plate_number", "totalKm": {"$divide": ["$totalMeters", 1000]}, "tripCount": 1}},
+{"$sort": {"totalKm": -1}}
 ])
 
 === USER QUESTION ===

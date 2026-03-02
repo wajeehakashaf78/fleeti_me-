@@ -13,5 +13,8 @@
   "sub_tenant_id": "maidah123",
   "created_at": {
     "$date": "2025-10-09T12:29:00.409Z"
+  },
+  "expiry_date": {
+    "$date": "2027-03-02T09:30:27.274Z"
   }
 }

@@ -125,7 +125,7 @@
 
 ## asset_base
 
-**Description:** Contains fundamental identity and operational state information for each fleet asset. Includes asset_id, name, type (fleet vehicle, equipment), availability status (available, assigned, maintenance, retired), device availability, category, sequence number, installation type, assigned devices/users, operational status (active, inactive, suspended), sub-tenant ID, and creation timestamps.
+**Description:** Contains fundamental identity and operational state information for each fleet asset. Includes asset_id, name, type (fleet vehicle, equipment), availability status (available, assigned, maintenance, retired), expiry date, device availability, category, sequence number, installation type, assigned devices/users, operational status (active, inactive, suspended), sub-tenant ID, and creation timestamps.
 
 **Use for questions about:**
 - Asset identification
@@ -135,6 +135,7 @@
 - Asset operational status
 - Basic asset information
 - Asset lookup
+- expire
 
 **Key Keywords:** asset, vehicle, fleet vehicle, asset name, asset ID, asset status, asset type, asset availability
 
