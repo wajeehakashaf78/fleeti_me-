@@ -61,6 +61,26 @@ def _build_reports_base_url(base_url: str) -> str:
     return base_url.rstrip("/") + "/api/admin/reports"
 
 
+def _compact_assistant_for_llm_history(assistant_value: Any) -> str:
+    """
+    Keep report responses compact when building LLM history.
+    """
+    if isinstance(assistant_value, dict) and "type" in assistant_value and "api_response" in assistant_value:
+        return json.dumps(
+            {
+                "type": assistant_value.get("type"),
+                "api_response": "valid_json_response"
+            },
+            separators=(",", ":")
+        )
+    if isinstance(assistant_value, str):
+        return assistant_value
+    try:
+        return json.dumps(assistant_value, default=str)
+    except Exception:
+        return str(assistant_value)
+
+
 def _build_reports_conversation_history(session_doc: Optional[Dict[str, Any]]) -> List[Dict[str, str]]:
     """
     Build conversation history for FleetiReports LLM from Mongo session doc.
@@ -76,15 +96,13 @@ def _build_reports_conversation_history(session_doc: Optional[Dict[str, Any]]) -
         if msg_type == "general":
             user_content = msg.get("user_input", "")
             assistant_content = msg.get("llm_response", "")
-            if not isinstance(assistant_content, str):
-                assistant_content = json.dumps(assistant_content, default=str)
+            assistant_content = _compact_assistant_for_llm_history(assistant_content)
             history.append({"role": "user", "content": user_content})
             history.append({"role": "assistant", "content": assistant_content})
         elif msg_type == "fleet":
             user_content = msg.get("user_input", "")
             assistant_content = msg.get("human_response", "")
-            if not isinstance(assistant_content, str):
-                assistant_content = json.dumps(assistant_content, default=str)
+            assistant_content = _compact_assistant_for_llm_history(assistant_content)
             history.append({"role": "user", "content": user_content})
             history.append({"role": "assistant", "content": assistant_content})
     return history

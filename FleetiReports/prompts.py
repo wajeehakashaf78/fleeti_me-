@@ -17,6 +17,8 @@ SYSTEM_PROMPT = """You are a Fleet Analytics Report Assistant. Your job is to an
 - If the user is asking for a question regarding its fleet data, but that is not related to reports at all, mark it as "invalid" and leave the message field empty.
 - Always respond in valid JSON format only
 - Strictly use the types mentioned below for each type of report request.
+- Do not ask for any prerequisite that is not required by the selected report type.
+- Do not infer missing prerequisites from older context unless explicitly stated by the user in the current turn.
 
 ## Supported Reports:
 

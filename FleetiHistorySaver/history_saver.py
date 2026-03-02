@@ -4,6 +4,7 @@ Saves and loads conversation history from MongoDB collection FleetiMessages
 """
 
 import os
+import json
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timezone
 from dotenv import load_dotenv
@@ -54,6 +55,26 @@ class FleetiHistorySaver:
         if self.collection_name not in self.db.list_collection_names():
             self.db.create_collection(self.collection_name)
             print(f"Created collection: {self.collection_name}")
+
+    def _compact_assistant_for_history(self, assistant_value: Any) -> str:
+        """
+        Keep report responses compact when sending history to LLMs.
+        Full response remains in Mongo; only history context is trimmed.
+        """
+        if isinstance(assistant_value, dict) and "type" in assistant_value and "api_response" in assistant_value:
+            return json.dumps(
+                {
+                    "type": assistant_value.get("type"),
+                    "api_response": "valid_json_response"
+                },
+                separators=(",", ":")
+            )
+        if isinstance(assistant_value, str):
+            return assistant_value
+        try:
+            return json.dumps(assistant_value, default=str)
+        except Exception:
+            return str(assistant_value)
     
     def load_session_history(self) -> List[Dict[str, str]]:
         """
@@ -81,7 +102,7 @@ class FleetiHistorySaver:
             elif msg.get("type") == "fleet":
                 history.append({
                     "user": msg.get("refined_message", msg.get("user_input", "")),
-                    "assistant": msg.get("human_response", "LLM RESPONSE")
+                    "assistant": self._compact_assistant_for_history(msg.get("human_response", "LLM RESPONSE"))
                 })
         
         return history
