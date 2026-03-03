@@ -46,7 +46,7 @@ Now write your final answer to the user in natural English.
 """
 
     response = client.chat.completions.create(
-        model="gpt-4o-mini",
+        model="gpt-4o",
         messages=[
             {"role": "system", "content": "You are a helpful assistant that explains database results in natural English."},
             {"role": "user", "content": prompt}

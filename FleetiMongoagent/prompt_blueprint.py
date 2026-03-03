@@ -90,11 +90,14 @@ VEHICLE DRIVER ASSIGNMENT:
 - **ALWAYS** use driver collection to get driver vehicle assignment.
 - EXAMPLE: To get driver of the vehicle LEB 8172, run this aggregate query on Driver Collection: [
   { $unwind: "$asset_assignments" },
+  { $match: { sub_tenant_id: "demo.tracking.me" } },
   { $match: { "asset_assignments.created_at": { $type: "date" } } },
   { $sort: { "_id": 1, "asset_assignments.created_at": -1 } },
   { $group: { _id: "$_id", doc: { $first: "$$ROOT" }, latest_assignment: { $first: "$asset_assignments" } } },
-  { $match: { "latest_assignment.asset_name": "LEB 8172" } },
-  { $project: { _id: 0, asset_name: "$latest_assignment.asset_name", assignment_created_at: "$latest_assignment.created_at", driver_name: { $trim: { input: { $concat: [ { $ifNull: [ "$doc.profile.first_name", "" ] }, " ", { $ifNull: [ "$doc.profile.last_name", "" ] } ] } } } } },
+  { $lookup: { from: "Asset", pipeline: [ { $match: { "details.plate_number": { "$regex": "^LEB 8172$", "$options": "i" } } }, { $project: { _id: 1 } }, { $limit: 1 } ], as: "matched_asset" } },
+  { $unwind: "$matched_asset" },
+  { $match: { $expr: { $eq: [ "$latest_assignment._id", "$matched_asset._id" ] } } },
+  { $project: { _id: 0, sub_tenant_id: "$doc.sub_tenant_id", asset_id: "$matched_asset._id", assignment_created_at: "$latest_assignment.created_at", driver_name: { $trim: { input: { $concat: [ { $ifNull: [ "$doc.profile.first_name", "" ] }, " ", { $ifNull: [ "$doc.profile.last_name", "" ] } ] } } } } },
   { $sort: { assignment_created_at: -1 } },
   { $limit: 1 }
 ]

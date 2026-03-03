@@ -324,6 +324,14 @@ async def _process_report_request(
     result["api_response"] = _dedupe_report_api_response(result.get("api_response"))
     return result
 
+
+def _user_friendly_failure_message() -> str:
+    """Safe fallback message for user-facing failures."""
+    return (
+        "I couldn't process your request right now. "
+        "Please rephrase your question and try again."
+    )
+
 # Pydantic models for request/response
 class ChatRequest(BaseModel):
     base_url: str = Field(..., description="Base URL from FE (e.g., https://qa.dev-iot.tracking.me/)")
@@ -636,9 +644,11 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(defau
                         )
                     
                     except Exception as query_error:
+                        # Log technical error server-side only.
+                        print(f"[QueryRunnerError] {str(query_error)}")
                         return ChatResponse(
-                            human_response=f"I encountered an error while querying the database: {str(query_error)}",
-                            error=True
+                            human_response=_user_friendly_failure_message(),
+                            error=False
                         )
             else:
                 # Type is NOT "invalid" - use FleetiReports response
@@ -742,10 +752,12 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(defau
             )
     
     except Exception as e:
+        # Log technical error server-side only.
+        print(f"[UnhandledChatError] {str(e)}")
         # Catch-all error handler
         return ChatResponse(
-            human_response=f"An unexpected error occurred: {str(e)}",
-            error=True
+            human_response=_user_friendly_failure_message(),
+            error=False
         )
 
 

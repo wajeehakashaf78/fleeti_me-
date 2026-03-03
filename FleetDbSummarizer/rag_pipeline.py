@@ -95,7 +95,7 @@ class RAGPipeline:
         
         # LLM client (OpenAI)
         self.openai_client = None
-        self.openai_model_name = os.getenv("OPENAI_MODEL") or "gpt-4o-mini"
+        self.openai_model_name = os.getenv("OPENAI_MODEL") or "gpt-4o"
         api_key = os.getenv("OPENAI_API_KEY")
         if not api_key:
             logger.warning("OPENAI_API_KEY not set. LLM generation will be disabled.")

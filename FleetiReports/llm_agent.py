@@ -17,7 +17,7 @@ class LLMAgent:
     def __init__(self):
         """Initialize OpenAI client"""
         self.client = OpenAI(api_key=settings.OPENAI_API_KEY)
-        self.model = "gpt-4o-mini"  # Using cost-effective model
+        self.model = "gpt-4o"  # Using cost-effective model
     
     def process_user_input(
         self, 

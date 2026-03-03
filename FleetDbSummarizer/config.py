@@ -49,4 +49,4 @@ JSON_OUTPUT_DIR = BASE_DIR / "output_json"  # Directory to save collection JSON 
 
 # Logging
 LOG_LEVEL = "INFO"
-LLM_MODEL = '4o-mini'
+LLM_MODEL = '4o'

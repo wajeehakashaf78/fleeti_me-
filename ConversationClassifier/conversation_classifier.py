@@ -14,7 +14,7 @@ except Exception:
 
 
 class ConversationClassifier:
-    def __init__(self, model_name: str = "gpt-4o-mini"):
+    def __init__(self, model_name: str = "gpt-4o"):
         """
         Initialize the conversation classifier using OpenAI Chat Completions.
         
