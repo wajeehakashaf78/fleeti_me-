@@ -52,7 +52,8 @@ class MongoDBHandler:
     def get_asset_ids_by_plate_numbers(
         self, 
         db_name: str, 
-        plate_numbers: List[str]
+        plate_numbers: List[str],
+        sub_tenant_id: str | None = None
     ) -> Dict[str, Any]:
         """
         Retrieve asset IDs by plate numbers
@@ -60,6 +61,7 @@ class MongoDBHandler:
         Args:
             db_name: Database name
             plate_numbers: List of asset plate numbers
+            sub_tenant_id: Sub-tenant identifier from JWT for tenant scoping
             
         Returns:
             Dictionary with asset information
@@ -69,6 +71,12 @@ class MongoDBHandler:
             normalized_variants = self._build_plate_variants(plate_numbers)
             
             # Execute aggregation query
+            match_stage: Dict[str, Any] = {
+                "_normalized_plate": {"$in": normalized_variants}
+            }
+            if sub_tenant_id:
+                match_stage["sub_tenant_id"] = sub_tenant_id
+
             pipeline = [
                 {
                     "$addFields": {
@@ -96,9 +104,7 @@ class MongoDBHandler:
                     }
                 },
                 {
-                    "$match": {
-                        "_normalized_plate": {"$in": normalized_variants}
-                    }
+                    "$match": match_stage
                 },
                 {
                     "$project": {
@@ -111,6 +117,7 @@ class MongoDBHandler:
             print(f"\n--- MongoDB Query (Asset by Plate Numbers) ---")
             print(f"Database: {db_name}")
             print(f"Collection: Asset")
+            print(f"SubTenantId: {sub_tenant_id}")
             print(f"Normalized Variants: {normalized_variants}")
             print(f"Pipeline: {pipeline}")
             
@@ -144,7 +151,8 @@ class MongoDBHandler:
     def get_asset_ids_by_group_names(
         self, 
         db_name: str, 
-        group_names: List[str]
+        group_names: List[str],
+        sub_tenant_id: str | None = None
     ) -> Dict[str, Any]:
         """
         Retrieve asset IDs by group names
@@ -152,6 +160,7 @@ class MongoDBHandler:
         Args:
             db_name: Database name
             group_names: List of group names
+            sub_tenant_id: Sub-tenant identifier from JWT for tenant scoping
             
         Returns:
             Dictionary with asset information
@@ -160,8 +169,12 @@ class MongoDBHandler:
             db = self.client[db_name]
             
             # Execute aggregation query
+            group_match: Dict[str, Any] = {"name": {"$in": group_names}}
+            if sub_tenant_id:
+                group_match["sub_tenant_id"] = sub_tenant_id
+
             pipeline = [
-                {"$match": {"name": {"$in": group_names}}},
+                {"$match": group_match},
                 {"$unwind": "$assigned_assets"},
                 {
                     "$project": {
@@ -175,6 +188,7 @@ class MongoDBHandler:
             print(f"\n--- MongoDB Query (Asset by Group Names) ---")
             print(f"Database: {db_name}")
             print(f"Collection: AssetGroup")
+            print(f"SubTenantId: {sub_tenant_id}")
             print(f"Pipeline: {pipeline}")
             
             results = list(db.AssetGroup.aggregate(pipeline))

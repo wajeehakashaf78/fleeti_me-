@@ -166,8 +166,10 @@ def _parse_date_range(date_range_str: str) -> tuple[str, str]:
 
 def _dedupe_items_by_date_asset_id(items: List[Any]) -> List[Any]:
     """
-    Keep first item for each (date, assetId) pair.
-    Items without both keys are kept as-is.
+    Keep first item for each:
+    - (date, assetId) when date exists
+    - assetId only when date does not exist
+    Items without assetId are kept as-is.
     """
     seen: set[tuple[str, str]] = set()
     deduped: List[Any] = []
@@ -183,11 +185,16 @@ def _dedupe_items_by_date_asset_id(items: List[Any]) -> List[Any]:
         asset_value = next((item.get(k) for k in asset_keys if item.get(k) is not None), None)
         date_value = next((item.get(k) for k in date_keys if item.get(k) is not None), None)
 
-        if asset_value is None or date_value is None:
+        if asset_value is None:
             deduped.append(item)
             continue
 
-        key = (str(date_value), str(asset_value))
+        asset_key = str(asset_value)
+        if date_value is None:
+            key = ("__asset_only__", asset_key)
+        else:
+            key = (str(date_value), asset_key)
+
         if key in seen:
             continue
         seen.add(key)
@@ -201,6 +208,7 @@ def _dedupe_report_api_response(api_response: Any) -> Any:
     Dedupe report API list payloads in common shapes:
     1) api_response.data.items
     2) api_response.data.data.items
+    3) api_response.data.data (list of objects by assetId)
     """
     if not isinstance(api_response, dict):
         return api_response
@@ -215,6 +223,25 @@ def _dedupe_report_api_response(api_response: Any) -> Any:
     nested_data = data_wrapper.get("data")
     if isinstance(nested_data, dict) and isinstance(nested_data.get("items"), list):
         nested_data["items"] = _dedupe_items_by_date_asset_id(nested_data["items"])
+    elif isinstance(nested_data, list):
+        # Trip-like shape: data.data is a list of asset objects.
+        # Keep only the first object for each assetId.
+        seen_asset_ids: set[str] = set()
+        deduped_assets: List[Any] = []
+        for row in nested_data:
+            if not isinstance(row, dict):
+                deduped_assets.append(row)
+                continue
+            asset_id = row.get("assetId") or row.get("AssetId") or row.get("asset_id")
+            if asset_id is None:
+                deduped_assets.append(row)
+                continue
+            key = str(asset_id)
+            if key in seen_asset_ids:
+                continue
+            seen_asset_ids.add(key)
+            deduped_assets.append(row)
+        data_wrapper["data"] = deduped_assets
 
     return api_response
 
@@ -222,6 +249,7 @@ def _dedupe_report_api_response(api_response: Any) -> Any:
 async def _process_report_request(
     llm_response: LLMResponse,
     db_name: str,
+    sub_tenant_id: str,
     api_handler: APIHandler
 ) -> Dict[str, Any]:
     result: Dict[str, Any] = {"mongodb_query_result": None, "api_response": None}
@@ -234,7 +262,8 @@ async def _process_report_request(
     if pre_req.asset_plate_numbers:
         query_result = mongo_handler.get_asset_ids_by_plate_numbers(
             db_name,
-            pre_req.asset_plate_numbers
+            pre_req.asset_plate_numbers,
+            sub_tenant_id=sub_tenant_id
         )
         result["mongodb_query_result"] = query_result
         if query_result["success"] and query_result["asset_ids"]:
@@ -242,7 +271,8 @@ async def _process_report_request(
     elif pre_req.group_names:
         query_result = mongo_handler.get_asset_ids_by_group_names(
             db_name,
-            pre_req.group_names
+            pre_req.group_names,
+            sub_tenant_id=sub_tenant_id
         )
         result["mongodb_query_result"] = query_result
         if query_result["success"] and query_result["asset_ids"]:
@@ -640,6 +670,7 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(defau
                     processing_result = await _process_report_request(
                         report_llm_response,
                         mongo_db,
+                        sub_tenant_id,
                         reports_api_handler
                     )
                     api_response_data = processing_result.get("api_response")
