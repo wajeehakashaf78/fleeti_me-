@@ -59,6 +59,27 @@ def _load_cors_origins_from_env() -> List[str]:
     cleaned = [x.strip() for x in raw.split(",") if x.strip()]
     return cleaned or ["*"]
 
+
+def _format_datetime_utc_z(dt: Optional[Any]) -> Optional[str]:
+    """
+    Format a datetime for API response as UTC with Z suffix (ISO 8601).
+    Handles naive datetimes from MongoDB (treated as UTC) and already-serialized strings.
+    """
+    if dt is None:
+        return None
+    if isinstance(dt, str):
+        s = dt.strip()
+        if not s:
+            return None
+        return s if s.endswith("Z") else s.rstrip("Z") + "Z"
+    if not isinstance(dt, datetime):
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    else:
+        dt = dt.astimezone(timezone.utc)
+    return dt.strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z"
+
 # Initialize FastAPI app
 app = FastAPI(
     title="FLEETI API",
@@ -693,7 +714,7 @@ async def get_conversations(authorization: Optional[str] = Header(default=None))
             conversations.append({
                 "session_id": str(session.get("_id")),
                 "last_message": last_text,
-                "last_timestamp": last_ts.isoformat() if last_ts else None
+                "last_timestamp": _format_datetime_utc_z(last_ts)
             })
 
         return {"conversations": conversations, "error": None}

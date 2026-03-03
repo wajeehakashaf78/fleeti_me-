@@ -97,7 +97,7 @@ Current user message:
 ========================
 DEFINITIONS
 ========================
-"Fleet" messages include: vehicle location, trip reports, route history, sensors, alerts, idling, speed, ignition, drivers, devices, odometer, geofences, fuel, maintenance, utilization, or any analytics/summary derived from fleet data.
+"Fleet" messages include: vehicle location, trip reports, route history, sensors, alerts, idling, driver asset information, speed, ignition, drivers, devices, odometer, geofences, fuel, maintenance, utilization, or any analytics/summary derived from fleet data.
 
 "General conversation" includes: greetings, chit-chat, random topics, gibberish, unclear requests, or anything unrelated to fleet data.
 
@@ -173,11 +173,6 @@ Refined:
 Gibberish example:
 user: "asdfghjkl"
 Refined must be identical and classification must be general conversation.
-
-========================
-WHAT NOT TO DO
-========================
-- If user has mentioned a vehicle plate number in the current message, you are not allowed to update the vehicle plate number in the user message based on matching plate number in the conversation history, thinking it is the same vehicle and user made a mistake this time.
 
 ========================
 TASKS
