@@ -88,7 +88,7 @@ TIME-BASED QUERIES:
 
 VEHICLE DRIVER ASSIGNMENT:
 - **ALWAYS** use driver collection to get driver vehicle assignment.
-- EXAMPLE: [
+- EXAMPLE: To get driver of the vehicle LEB 8172, run this aggregate query on Driver Collection: [
   { $unwind: "$asset_assignments" },
   { $match: { "asset_assignments.created_at": { $type: "date" } } },
   { $sort: { "_id": 1, "asset_assignments.created_at": -1 } },
