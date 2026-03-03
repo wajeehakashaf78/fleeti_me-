@@ -295,10 +295,12 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(defau
             mongo_db=mongo_db,
         )
 
-        # Load existing conversation history (excludes static message)
+        # Load existing conversation history (excludes static message).
+        # Always set classifier history to this session's history; for a new session
+        # this must be [] so we don't leak history from other sessions (e.g. wrong
+        # plate numbers from a previous chat).
         existing_history = history_saver.load_session_history()
-        if existing_history:
-            classifier.conversation_history = existing_history[-8:]
+        classifier.conversation_history = existing_history[-8:] if existing_history else []
 
         # Process message through classifier
         refined_message, classification, llm_response = classifier.process_message(request.user_input)

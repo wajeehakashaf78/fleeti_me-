@@ -175,6 +175,11 @@ user: "asdfghjkl"
 Refined must be identical and classification must be general conversation.
 
 ========================
+WHAT NOT TO DO
+========================
+- If user has mentioned a vehicle plate number in the current message, you are not allowed to update the vehicle plate number in the user message based on matching plate number in the conversation history, thinking it is the same vehicle and user made a mistake this time.
+
+========================
 TASKS
 ========================
 1) CLASSIFICATION: Output exactly one label:
