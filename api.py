@@ -33,6 +33,32 @@ from FleetiReports.models import LLMResponse
 # Load environment variables
 load_dotenv()
 
+
+def _load_cors_origins_from_env() -> List[str]:
+    """
+    Read allowed CORS origins from env var `CORS_ALLOWED_ORIGINS`.
+    Supports:
+    - "*" 
+    - comma-separated string
+    - JSON array string
+    """
+    raw = (os.getenv("CORS_ALLOWED_ORIGINS") or "*").strip()
+    if raw == "*":
+        return ["*"]
+
+    # Try JSON list first.
+    try:
+        parsed = json.loads(raw)
+        if isinstance(parsed, list):
+            cleaned = [str(x).strip() for x in parsed if str(x).strip()]
+            return cleaned or ["*"]
+    except Exception:
+        pass
+
+    # Fallback: comma-separated.
+    cleaned = [x.strip() for x in raw.split(",") if x.strip()]
+    return cleaned or ["*"]
+
 # Initialize FastAPI app
 app = FastAPI(
     title="FLEETI API",
@@ -43,7 +69,7 @@ app = FastAPI(
 # Enable CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allows all origins
+    allow_origins=_load_cors_origins_from_env(),
     allow_credentials=True,
     allow_methods=["*"],  # Allows all methods
     allow_headers=["*"],  # Allows all headers
