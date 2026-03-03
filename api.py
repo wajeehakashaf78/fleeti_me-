@@ -270,7 +270,7 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(defau
         # Load existing conversation history (excludes static message)
         existing_history = history_saver.load_session_history()
         if existing_history:
-            classifier.conversation_history = existing_history[-10:]
+            classifier.conversation_history = existing_history[-8:]
 
         # Process message through classifier
         refined_message, classification, llm_response = classifier.process_message(request.user_input)

@@ -186,7 +186,7 @@ TASKS
 
 3) RESPONSE:
 - If classification is "general conversation":
-  * If user requested IDs or write ops: say this assistant supports read-only fleet queries only.
+  * If user requested IDs or write ops into the database: say this assistant supports read-only fleet queries only.
   * Else if message is gibberish/unclear: say you’re not sure and that you can help with fleet-related questions.
   * Else: friendly appropriate response.
 - If classification is "fleet": output "N/A" (exactly).
