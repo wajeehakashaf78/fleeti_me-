@@ -67,12 +67,14 @@ app = FastAPI(
 )
 
 # Enable CORS
+_cors_origins = _load_cors_origins_from_env()
+_allow_credentials = "*" not in _cors_origins  # Must be False when using "*"
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],  # Allows all methods
-    allow_headers=["*"],  # Allows all headers
+    allow_origins=_cors_origins,
+    allow_credentials=_allow_credentials,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Initialize global components that don't depend on dynamic parameters
