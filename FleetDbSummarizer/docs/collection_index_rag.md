@@ -131,7 +131,7 @@
 - Asset identification
 - Asset names and IDs
 - Asset types and categories
-- Asset availability status
+- Asset availability 
 - Asset operational status
 - Basic asset information
 - Asset lookup
@@ -436,15 +436,15 @@
 
 ## Driver_asset_assignments
 
-**Description:** Manages relationships between drivers and vehicles they are assigned to operate. Includes assignment history (past/current), assigned vehicle IDs/names, assignment start/end dates, assignment status (active, completed, transferred), assignment type, priority levels, assignment notes, assigned by information, responsibilities, access levels, notification preferences, and schedule information.
+**Description:** Manages relationships between drivers and vehicles they are assigned to operate. Includes assignment history (past/current), assigned vehicle, IDs/names, assignment start/end dates, assignment status (active, completed, transferred), assignment type, priority levels, assignment notes, assigned by information, responsibilities, access levels, notification preferences, and schedule information.
 
 **Use for questions about:**
 - Which driver is assigned to which vehicle
-- Driver-vehicle assignments
+- Driver vehicle assignments
 - Assignment history
 - Current assignments
 - Assignment status
-- Driver-vehicle relationships
+- Driver assign
 
 **Key Keywords:** driver assignment, vehicle assignment, assigned driver, driver-vehicle relationship, assignment history
 

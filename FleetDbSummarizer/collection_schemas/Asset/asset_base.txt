@@ -10,7 +10,6 @@ Fields:
 - sequence_number: string
 - installation_type: string
 - assigned_devices: array<string>|string
-- assigned_users: array<string>|string
 - status: string
 - sub_tenant_id: string
 - created_at: BSON Date

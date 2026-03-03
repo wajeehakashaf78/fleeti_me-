@@ -86,6 +86,19 @@ TIME-BASED QUERIES:
 { "$sort": { "timeDiff": 1 } },
 { "$limit": 1 }
 
+VEHICLE DRIVER ASSIGNMENT:
+- **ALWAYS** use driver collection to get driver vehicle assignment.
+- EXAMPLE: [
+  { $unwind: "$asset_assignments" },
+  { $match: { "asset_assignments.created_at": { $type: "date" } } },
+  { $sort: { "_id": 1, "asset_assignments.created_at": -1 } },
+  { $group: { _id: "$_id", doc: { $first: "$$ROOT" }, latest_assignment: { $first: "$asset_assignments" } } },
+  { $match: { "latest_assignment.asset_name": "LEB 8172" } },
+  { $project: { _id: 0, asset_name: "$latest_assignment.asset_name", assignment_created_at: "$latest_assignment.created_at", driver_name: { $trim: { input: { $concat: [ { $ifNull: [ "$doc.profile.first_name", "" ] }, " ", { $ifNull: [ "$doc.profile.last_name", "" ] } ] } } } } },
+  { $sort: { assignment_created_at: -1 } },
+  { $limit: 1 }
+]
+
 CRITICAL DATE FORMAT RULES:
 - **ALWAYS use ISODate() function for ALL date comparisons in $match stages**
 - **CORRECT format:** ISODate("2025-11-01T00:00:00Z") or ISODate("2025-11-01T00:00:00.000Z")
