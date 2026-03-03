@@ -164,6 +164,61 @@ def _parse_date_range(date_range_str: str) -> tuple[str, str]:
     return date_range_str.strip(), date_range_str.strip()
 
 
+def _dedupe_items_by_date_asset_id(items: List[Any]) -> List[Any]:
+    """
+    Keep first item for each (date, assetId) pair.
+    Items without both keys are kept as-is.
+    """
+    seen: set[tuple[str, str]] = set()
+    deduped: List[Any] = []
+
+    date_keys = ("date", "Date", "reportDate", "ReportDate", "startDate", "StartDate")
+    asset_keys = ("assetId", "AssetId", "asset_id")
+
+    for item in items:
+        if not isinstance(item, dict):
+            deduped.append(item)
+            continue
+
+        asset_value = next((item.get(k) for k in asset_keys if item.get(k) is not None), None)
+        date_value = next((item.get(k) for k in date_keys if item.get(k) is not None), None)
+
+        if asset_value is None or date_value is None:
+            deduped.append(item)
+            continue
+
+        key = (str(date_value), str(asset_value))
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(item)
+
+    return deduped
+
+
+def _dedupe_report_api_response(api_response: Any) -> Any:
+    """
+    Dedupe report API list payloads in common shapes:
+    1) api_response.data.items
+    2) api_response.data.data.items
+    """
+    if not isinstance(api_response, dict):
+        return api_response
+
+    data_wrapper = api_response.get("data")
+    if not isinstance(data_wrapper, dict):
+        return api_response
+
+    if isinstance(data_wrapper.get("items"), list):
+        data_wrapper["items"] = _dedupe_items_by_date_asset_id(data_wrapper["items"])
+
+    nested_data = data_wrapper.get("data")
+    if isinstance(nested_data, dict) and isinstance(nested_data.get("items"), list):
+        nested_data["items"] = _dedupe_items_by_date_asset_id(nested_data["items"])
+
+    return api_response
+
+
 async def _process_report_request(
     llm_response: LLMResponse,
     db_name: str,
@@ -236,6 +291,7 @@ async def _process_report_request(
                 report_type, asset_ids=asset_ids, start_date=start_date, end_date=end_date
             )
 
+    result["api_response"] = _dedupe_report_api_response(result.get("api_response"))
     return result
 
 # Pydantic models for request/response
