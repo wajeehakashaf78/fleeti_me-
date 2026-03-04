@@ -11,8 +11,9 @@ import json
 import ast
 import re
 from typing import Optional, Dict, Any, List
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from dotenv import load_dotenv
+from dateutil import parser as dtparser
 
 # Import all the components from main.py
 from ConversationClassifier.conversation_classifier import ConversationClassifier
@@ -164,6 +165,88 @@ def _parse_date_range(date_range_str: str) -> tuple[str, str]:
     return date_range_str.strip(), date_range_str.strip()
 
 
+def _parse_user_utc_offset(user_time_zone: Optional[str]) -> timezone:
+    """
+    Parse timezone offsets in forms:
+    +5, +5:00, -03:30, UTC+5, UTC +5:00, UTC-03:30
+    Fallback to UTC when invalid.
+    """
+    if not user_time_zone:
+        return timezone.utc
+    m = re.match(
+        r"^\s*(?:UTC\s*)?([+-])\s*(\d{1,2})(?::?\s*(\d{2}))?\s*$",
+        user_time_zone,
+        flags=re.IGNORECASE
+    )
+    if not m:
+        return timezone.utc
+    sign = 1 if m.group(1) == "+" else -1
+    hours = int(m.group(2))
+    minutes = int(m.group(3) or 0)
+    if hours > 14 or minutes > 59:
+        return timezone.utc
+    return timezone(timedelta(hours=hours * sign, minutes=minutes * sign))
+
+
+def _has_explicit_time_component(value: str) -> bool:
+    return bool(re.search(r"\d{2}:\d{2}(?::\d{2})?", value))
+
+
+def _to_utc_iso_z_for_report(
+    value: str,
+    user_tz: timezone,
+    reinterpret_utc_as_user_local: bool = True
+) -> str:
+    dt = dtparser.parse(value)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=user_tz)
+    elif reinterpret_utc_as_user_local:
+        utc_like = dt.utcoffset() == timedelta(0)
+        if utc_like and user_tz.utcoffset(None) != timedelta(0):
+            dt = dt.replace(tzinfo=None).replace(tzinfo=user_tz)
+    dt_utc = dt.astimezone(timezone.utc)
+    return dt_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _normalize_report_date_range_to_utc(
+    date_range_str: str,
+    user_time_zone: Optional[str]
+) -> tuple[str, str]:
+    """
+    1) Parse start/end from date_range.
+    2) If time is missing:
+       - start gets 00:00:00
+       - end gets 23:59:59
+       - when same date, enforce those boundaries.
+    3) Convert both to UTC Z format.
+    """
+    start_raw, end_raw = _parse_date_range(date_range_str)
+    user_tz = _parse_user_utc_offset(user_time_zone)
+
+    start_value = start_raw
+    end_value = end_raw
+
+    # Add day boundaries when time is absent
+    if not _has_explicit_time_component(start_value):
+        start_value = f"{start_value} 00:00:00"
+    if not _has_explicit_time_component(end_value):
+        end_value = f"{end_value} 23:59:59"
+
+    # If both dates are same date, guarantee full-day bounds
+    try:
+        start_day = dtparser.parse(start_raw).date()
+        end_day = dtparser.parse(end_raw).date()
+        if start_day == end_day:
+            start_value = f"{start_day.isoformat()} 00:00:00"
+            end_value = f"{end_day.isoformat()} 23:59:59"
+    except Exception:
+        pass
+
+    start_utc = _to_utc_iso_z_for_report(start_value, user_tz=user_tz)
+    end_utc = _to_utc_iso_z_for_report(end_value, user_tz=user_tz)
+    return start_utc, end_utc
+
+
 def _dedupe_items_by_date_asset_id(items: List[Any]) -> List[Any]:
     """
     Keep first item for each:
@@ -250,7 +333,8 @@ async def _process_report_request(
     llm_response: LLMResponse,
     db_name: str,
     sub_tenant_id: str,
-    api_handler: APIHandler
+    api_handler: APIHandler,
+    user_time_zone: Optional[str] = None
 ) -> Dict[str, Any]:
     result: Dict[str, Any] = {"mongodb_query_result": None, "api_response": None}
     report_type = llm_response.type
@@ -291,7 +375,10 @@ async def _process_report_request(
     start_date = None
     end_date = None
     if pre_req.date_range:
-        start_date, end_date = _parse_date_range(pre_req.date_range)
+        start_date, end_date = _normalize_report_date_range_to_utc(
+            pre_req.date_range,
+            user_time_zone
+        )
 
     if report_type == "Trip":
         if asset_ids and start_date and end_date:
@@ -338,6 +425,10 @@ class ChatRequest(BaseModel):
     assistant_static_input: Optional[str] = Field(None, description="Initial static assistant message")
     user_input: Optional[str] = Field(None, description="User's message/question")
     session_id: Optional[str] = Field(None, description="Session ID (MongoDB document ID)")
+    time_zone: Optional[str] = Field(
+        default=None,
+        description="User timezone in format 'UTC +/- X:XX' (e.g., 'UTC +5:00')"
+    )
 
 class ChatResponse(BaseModel):
     human_response: Optional[Any] = Field(default=None, description="Natural language response or structured data")
@@ -616,7 +707,11 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(defau
                     query_runner = LlmMongoRunner(mongo_db=mongo_db)
                     
                     try:
-                        results = query_runner.run(mongoagent_response, limit=10)
+                        results = query_runner.run(
+                            mongoagent_response,
+                            limit=10,
+                            user_time_zone=request.time_zone
+                        )
                         
                         # Convert results to string
                         results_str = json.dumps(results, indent=2, default=str) if results else "[]"
@@ -681,7 +776,8 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(defau
                         report_llm_response,
                         mongo_db,
                         sub_tenant_id,
-                        reports_api_handler
+                        reports_api_handler,
+                        request.time_zone
                     )
                     api_response_data = processing_result.get("api_response")
                     mongodb_query_result = processing_result.get("mongodb_query_result")

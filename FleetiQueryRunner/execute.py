@@ -2,11 +2,11 @@
 import os
 import re
 import json
-from typing import Any, Dict, List, Tuple, Union, Iterable
+from typing import Any, Dict, List, Tuple, Union, Iterable, Optional
 
 from dotenv import load_dotenv
 from pymongo import MongoClient
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from dateutil import parser as dtparser
 from bson import ObjectId
 
@@ -63,6 +63,157 @@ def _replace_js_constructors(s: str) -> str:
     s = re.sub(r'\bNumberLong\(\s*"([^"]+)"\s*\)', r'{"$numberLong":"\1"}', s)
     s = re.sub(r'\bNumberLong\(\s*([0-9]+)\s*\)', r'{"$numberLong":"\1"}', s)
     return s
+
+
+def _parse_user_utc_offset(user_time_zone: Optional[str]) -> timezone:
+    """
+    Parse user timezone in forms like:
+    - +5
+    - +5:00
+    - -03:30
+    - UTC+5
+    - UTC +5:00
+    - UTC-03:30
+    Fallback to UTC if parsing fails.
+    """
+    if not user_time_zone:
+        return timezone.utc
+
+    m = re.match(
+        r"^\s*(?:UTC\s*)?([+-])\s*(\d{1,2})(?::?\s*(\d{2}))?\s*$",
+        user_time_zone,
+        flags=re.IGNORECASE
+    )
+    if not m:
+        return timezone.utc
+
+    sign = 1 if m.group(1) == "+" else -1
+    hours = int(m.group(2))
+    minutes = int(m.group(3) or 0)
+    if hours > 14 or minutes > 59:
+        return timezone.utc
+    delta = timedelta(hours=hours, minutes=minutes) * sign
+    return timezone(delta)
+
+
+def _to_utc_iso_z(
+    date_str: str,
+    user_tz: timezone,
+    reinterpret_utc_as_user_local: bool = False
+) -> Optional[str]:
+    """
+    Convert a date/datetime string to UTC ISO format with Z suffix.
+    If no timezone exists in the input, interpret as user's local timezone.
+    """
+    parsed_dt: Optional[datetime] = None
+    try:
+        parsed_dt = dtparser.isoparse(date_str)
+    except Exception:
+        try:
+            parsed_dt = dtparser.parse(date_str)
+        except Exception:
+            return None
+
+    if parsed_dt.tzinfo is None:
+        parsed_dt = parsed_dt.replace(tzinfo=user_tz)
+    elif reinterpret_utc_as_user_local:
+        # If model emits UTC/Z for local-day boundaries, reinterpret the wall time
+        # as user's local time before converting to UTC.
+        tz_name = str(parsed_dt.tzinfo).upper()
+        utc_like = parsed_dt.utcoffset() == timedelta(0) or tz_name in ("UTC", "UTC+00:00", "Z")
+        if utc_like and user_tz.utcoffset(None) != timedelta(0):
+            parsed_dt = parsed_dt.replace(tzinfo=None).replace(tzinfo=user_tz)
+
+    utc_dt = parsed_dt.astimezone(timezone.utc)
+    if utc_dt.microsecond:
+        frac = f"{utc_dt.microsecond:06d}".rstrip("0")
+        return utc_dt.strftime("%Y-%m-%dT%H:%M:%S") + f".{frac}Z"
+    return utc_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _apply_user_timezone_to_query_dates(query_str: str, user_time_zone: Optional[str]) -> str:
+    """
+    Find date/datetime literals in common Mongo query formats and convert them to UTC
+    based on user timezone.
+    Handles:
+    - ISODate("...")
+    - {"$date": "..."}
+    - quoted date/datetime literals
+    """
+    user_tz = _parse_user_utc_offset(user_time_zone)
+    result = query_str
+
+    # ISODate("...")
+    def repl_isodate(match: re.Match) -> str:
+        quote = match.group(1)
+        value = match.group(2).strip()
+        converted = _to_utc_iso_z(value, user_tz, reinterpret_utc_as_user_local=True)
+        if not converted:
+            return match.group(0)
+        return f"ISODate({quote}{converted}{quote})"
+
+    result = re.sub(
+        r'ISODate\s*\(\s*(["\'])([^"\']+)\1\s*\)',
+        repl_isodate,
+        result
+    )
+
+    # {"$date":"..."} or {'$date':'...'}
+    def repl_extjson_date(match: re.Match) -> str:
+        key_q = match.group(1)
+        value_q = match.group(2)
+        value = match.group(3).strip()
+        converted = _to_utc_iso_z(value, user_tz, reinterpret_utc_as_user_local=True)
+        if not converted:
+            return match.group(0)
+        return "{" + f"{key_q}$date{key_q}: {value_q}{converted}{value_q}" + "}"
+
+    result = re.sub(
+        r'\{\s*(["\'])\$date\1\s*:\s*(["\'])([^"\']+)\2\s*\}',
+        repl_extjson_date,
+        result
+    )
+
+    # Protect ISODate and Extended JSON segments before generic quoted-date conversion
+    protected_sections: List[Tuple[str, str]] = []
+    protected_counter = 0
+
+    def protect_segment(match: re.Match) -> str:
+        nonlocal protected_counter
+        placeholder = f"__PROTECTED_DATE_SEGMENT_{protected_counter}__"
+        protected_sections.append((placeholder, match.group(0)))
+        protected_counter += 1
+        return placeholder
+
+    result = re.sub(r'ISODate\s*\(\s*["\'][^"\']+["\']\s*\)', protect_segment, result)
+    result = re.sub(r'\{\s*["\']\$date["\']\s*:\s*["\'][^"\']+["\']\s*\}', protect_segment, result)
+
+    # Generic quoted dates:
+    # 1) YYYY-MM-DD
+    # 2) YYYY-MM-DDTHH:MM[:SS[.ffffff]][Z|+05:00|-0300]
+    # 3) YYYY-MM-DD HH:MM[:SS[.ffffff]][Z|+05:00|-0300]
+    date_like_pattern = re.compile(
+        r'(["\'])('
+        r'\d{4}-\d{2}-\d{2}'
+        r'(?:[T t ]\d{2}:\d{2}(?::\d{2}(?:\.\d{1,6})?)?(?:\s?(?:Z|[+\-]\d{2}:?\d{2}))?)?'
+        r')\1'
+    )
+
+    def repl_quoted_date(match: re.Match) -> str:
+        quote = match.group(1)
+        value = match.group(2).strip()
+        converted = _to_utc_iso_z(value, user_tz, reinterpret_utc_as_user_local=True)
+        if not converted:
+            return match.group(0)
+        return f"{quote}{converted}{quote}"
+
+    result = date_like_pattern.sub(repl_quoted_date, result)
+
+    # Restore protected segments
+    for placeholder, original in protected_sections:
+        result = result.replace(placeholder, original)
+
+    return result
 
 def _extract_collection_and_op(s: str) -> Tuple[str, str, str]:
     """
@@ -345,13 +496,19 @@ class LlmMongoRunner:
         self.client = MongoClient(resolved_mongo_uri)
         self.db = self.client[resolved_mongo_db]
 
-    def run(self, raw_response: str, limit: int = 50) -> List[Dict[str, Any]]:
+    def run(
+        self,
+        raw_response: str,
+        limit: int = 50,
+        user_time_zone: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
         """
         Parses and executes an LLM-produced Mongo command string.
         Supports db.<Collection>.aggregate([...]) and .find({...}).
         """
         try:
             cleaned = _clean_raw_response(raw_response)
+            cleaned = _apply_user_timezone_to_query_dates(cleaned, user_time_zone)
             # Replace date strings with ISODate() before parsing
             cleaned = _replace_date_strings_with_isodate(cleaned)
             coll, op, inside = _extract_collection_and_op(cleaned)
