@@ -12,6 +12,7 @@ import ast
 import re
 from typing import Optional, Dict, Any, List
 from datetime import datetime, timezone, timedelta
+from urllib.parse import urlparse
 from dotenv import load_dotenv
 from dateutil import parser as dtparser
 
@@ -109,6 +110,35 @@ pipeline = RAGPipeline()
 # ================================
 def _build_reports_base_url(base_url: str) -> str:
     return base_url.rstrip("/") + "/api/admin/reports"
+
+
+def _extract_hostname(base_url: Optional[str]) -> Optional[str]:
+    """
+    Extract lowercase hostname from base_url.
+    Accepts full URL (https://demo.tracking.me/) or raw host.
+    """
+    if not base_url:
+        return None
+    raw = base_url.strip()
+    if not raw:
+        return None
+    parsed = urlparse(raw if "://" in raw else f"https://{raw}")
+    if not parsed.hostname:
+        return None
+    return parsed.hostname.strip().lower().strip(".")
+
+
+def _should_remove_sub_tenant_match(sub_tenant_id: str, base_url: Optional[str]) -> bool:
+    """
+    Remove sub_tenant_id query filters when FE base URL host equals JWT sub_tenant_id.
+    Example:
+      sub_tenant_id = "demo.tracking.me"
+      base_url = "https://demo.tracking.me/"
+    """
+    host = _extract_hostname(base_url)
+    if not host or not sub_tenant_id:
+        return False
+    return host == sub_tenant_id.strip().lower().strip(".")
 
 
 def _compact_assistant_for_llm_history(assistant_value: Any) -> str:
@@ -683,25 +713,28 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(defau
                             human_response="I couldn't generate a database query for your question. Please try rephrasing.",
                             error=True
                         )
-                    
-                    # Replace placeholder sub_tenant_id with actual value
-                    # Handle multiple occurrences in the query with various quote styles and nested paths
-                    # Pattern to match any key ending with sub_tenant_id (including nested paths like "alert_rule.sub_tenant_id")
-                    # followed by colon and the placeholder value "sub_tenant_id"
-                    # Replace the value with actual sub_tenant_id (always use double quotes)
-                    patterns = [
-                        # Match keys with double quotes, values with double quotes (handles nested paths)
-                        (r'("(?:[^"]*\.)?sub_tenant_id"\s*:\s*)"sub_tenant_id"', r'\1"' + sub_tenant_id + '"'),
-                        # Match keys with double quotes, values with single quotes
-                        (r'("(?:[^"]*\.)?sub_tenant_id"\s*:\s*)\'sub_tenant_id\'', r'\1"' + sub_tenant_id + '"'),
-                        # Match keys with single quotes, values with double quotes
-                        (r'(\'(?:[^\']*\.)?sub_tenant_id\'\s*:\s*)"sub_tenant_id"', r'\1"' + sub_tenant_id + '"'),
-                        # Match keys with single quotes, values with single quotes
-                        (r'(\'(?:[^\']*\.)?sub_tenant_id\'\s*:\s*)\'sub_tenant_id\'', r'\1"' + sub_tenant_id + '"'),
-                    ]
-                    
-                    for pattern, replacement in patterns:
-                        mongoagent_response = re.sub(pattern, replacement, mongoagent_response)
+
+                    remove_sub_tenant_match = _should_remove_sub_tenant_match(
+                        sub_tenant_id=sub_tenant_id,
+                        base_url=request.base_url
+                    )
+
+                    if not remove_sub_tenant_match:
+                        # Replace placeholder sub_tenant_id with actual value
+                        # Handle multiple occurrences in the query with various quote styles and nested paths
+                        patterns = [
+                            # Match keys with double quotes, values with double quotes (handles nested paths)
+                            (r'("(?:[^"]*\.)?sub_tenant_id"\s*:\s*)"sub_tenant_id"', r'\1"' + sub_tenant_id + '"'),
+                            # Match keys with double quotes, values with single quotes
+                            (r'("(?:[^"]*\.)?sub_tenant_id"\s*:\s*)\'sub_tenant_id\'', r'\1"' + sub_tenant_id + '"'),
+                            # Match keys with single quotes, values with double quotes
+                            (r'(\'(?:[^\']*\.)?sub_tenant_id\'\s*:\s*)"sub_tenant_id"', r'\1"' + sub_tenant_id + '"'),
+                            # Match keys with single quotes, values with single quotes
+                            (r'(\'(?:[^\']*\.)?sub_tenant_id\'\s*:\s*)\'sub_tenant_id\'', r'\1"' + sub_tenant_id + '"'),
+                        ]
+
+                        for pattern, replacement in patterns:
+                            mongoagent_response = re.sub(pattern, replacement, mongoagent_response)
                     
                     # Step 3: Execute query with dynamic mongo_db from JWT
                     query_runner = LlmMongoRunner(mongo_db=mongo_db)
@@ -710,7 +743,8 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(defau
                         results = query_runner.run(
                             mongoagent_response,
                             limit=10,
-                            user_time_zone=request.time_zone
+                            user_time_zone=request.time_zone,
+                            remove_sub_tenant_match=remove_sub_tenant_match
                         )
                         
                         # Convert results to string

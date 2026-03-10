@@ -482,6 +482,81 @@ def _replace_date_strings_with_isodate(query_str: str) -> str:
     
     return result
 
+
+def _is_sub_tenant_filter_key(key: Any) -> bool:
+    """Return True when key represents a sub-tenant filter path."""
+    if not isinstance(key, str):
+        return False
+    normalized = key.strip().strip("\"'").lower()
+    return normalized == "sub_tenant_id" or normalized.endswith(".sub_tenant_id")
+
+
+def _strip_sub_tenant_from_filter(filter_obj: Any) -> Any:
+    """
+    Recursively remove sub_tenant_id filter keys from Mongo filter expressions.
+    Intended for $match/find filter objects only.
+    """
+    if isinstance(filter_obj, list):
+        cleaned_list = []
+        for item in filter_obj:
+            cleaned_item = _strip_sub_tenant_from_filter(item)
+            if isinstance(cleaned_item, dict) and not cleaned_item:
+                continue
+            cleaned_list.append(cleaned_item)
+        return cleaned_list
+
+    if not isinstance(filter_obj, dict):
+        return filter_obj
+
+    cleaned: Dict[str, Any] = {}
+    for key, value in filter_obj.items():
+        if _is_sub_tenant_filter_key(key):
+            continue
+
+        # Clean logical expression arrays and remove empty clauses.
+        if key in ("$and", "$or", "$nor") and isinstance(value, list):
+            clauses = []
+            for clause in value:
+                cleaned_clause = _strip_sub_tenant_from_filter(clause)
+                if isinstance(cleaned_clause, dict) and not cleaned_clause:
+                    continue
+                clauses.append(cleaned_clause)
+            if clauses:
+                cleaned[key] = clauses
+            continue
+
+        cleaned[key] = _strip_sub_tenant_from_filter(value)
+
+    return cleaned
+
+
+def _strip_sub_tenant_match_from_payload(op: str, payload: MongoPayload) -> MongoPayload:
+    """
+    Remove sub_tenant_id filters from:
+    - aggregate pipeline $match stages
+    - find filter object
+    """
+    if op == "aggregate" and isinstance(payload, list):
+        cleaned_pipeline: List[Dict[str, Any]] = []
+        for stage in payload:
+            if isinstance(stage, dict) and isinstance(stage.get("$match"), dict):
+                stage_copy = dict(stage)
+                stage_copy["$match"] = _strip_sub_tenant_from_filter(stage_copy["$match"])
+                cleaned_pipeline.append(stage_copy)
+            else:
+                cleaned_pipeline.append(stage)
+        return cleaned_pipeline
+
+    if op == "find":
+        if isinstance(payload, dict) and isinstance(payload.get("filter"), dict):
+            payload_copy = dict(payload)
+            payload_copy["filter"] = _strip_sub_tenant_from_filter(payload_copy["filter"])
+            return payload_copy
+        if isinstance(payload, dict):
+            return _strip_sub_tenant_from_filter(payload)
+
+    return payload
+
 # ---------------------------
 # Runner
 # ---------------------------
@@ -500,7 +575,8 @@ class LlmMongoRunner:
         self,
         raw_response: str,
         limit: int = 50,
-        user_time_zone: Optional[str] = None
+        user_time_zone: Optional[str] = None,
+        remove_sub_tenant_match: bool = False
     ) -> List[Dict[str, Any]]:
         """
         Parses and executes an LLM-produced Mongo command string.
@@ -514,6 +590,8 @@ class LlmMongoRunner:
             coll, op, inside = _extract_collection_and_op(cleaned)
             payload = _parse_payload(op, inside)
             payload = _rewrite_keys(payload)  # normalize field paths & convert Extended JSON
+            if remove_sub_tenant_match:
+                payload = _strip_sub_tenant_match_from_payload(op, payload)
 
             # Print the final query before execution
             print("\n" + "=" * 60)

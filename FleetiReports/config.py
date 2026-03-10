@@ -24,6 +24,8 @@ class Settings(BaseSettings):
     
     # API Configuration
     BASE_API_URL: str = "https://qa.dev-iot.tracking.me/api/admin/reports"
+    REPORTS_API_VERIFY_SSL: bool = True
+    REPORTS_API_CA_BUNDLE: Optional[str] = None
     
     class Config:
         env_file = ".env"

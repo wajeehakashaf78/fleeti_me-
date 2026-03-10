@@ -16,7 +16,9 @@ class APIHandler:
         self,
         base_url: Optional[str] = None,
         access_token: Optional[str] = None,
-        timeout: float = 30.0
+        timeout: float = 30.0,
+        verify_ssl: Optional[bool] = None,
+        ca_bundle: Optional[str] = None
     ):
         """Initialize API handler"""
         self.base_url = base_url or settings.BASE_API_URL
@@ -24,6 +26,10 @@ class APIHandler:
         if self.access_token.lower().startswith("bearer "):
             self.access_token = self.access_token.split(" ", 1)[1].strip()
         self.timeout = timeout  # seconds timeout
+        self.verify_ssl = settings.REPORTS_API_VERIFY_SSL if verify_ssl is None else bool(verify_ssl)
+        self.ca_bundle = (ca_bundle or settings.REPORTS_API_CA_BUNDLE or "").strip() or None
+        # `verify` accepts bool or path to CA bundle.
+        self.http_verify = self.ca_bundle if self.ca_bundle else self.verify_ssl
         self.default_page = 1
         self.default_size = 10
 
@@ -90,7 +96,7 @@ class APIHandler:
                 print(f"Headers: Authorization: Bearer {self.access_token[:20]}...")
                 print(f"Payload: {payload}")
             
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
+            async with httpx.AsyncClient(timeout=self.timeout, verify=self.http_verify) as client:
                 response = await client.post(
                     url,
                     json=payload,
