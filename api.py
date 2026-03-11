@@ -399,7 +399,8 @@ async def _process_report_request(
     if pre_req.driver_names:
         query_result = mongo_handler.get_driver_ids_by_names(
             db_name,
-            pre_req.driver_names
+            pre_req.driver_names,
+            sub_tenant_id=resolved_sub_tenant_id
         )
         result["mongodb_query_result"] = query_result
         if query_result["success"] and query_result["driver_ids"]:

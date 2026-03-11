@@ -48,6 +48,22 @@ class MongoDBHandler:
                 if reverse:
                     variants.add(reverse)
         return list(variants)
+
+    def _is_all_selector(self, values: List[str] | None) -> bool:
+        """Return True if any provided selector value is 'ALL' (case-insensitive)."""
+        return any(str(v).strip().upper() == "ALL" for v in (values or []))
+
+    def _unique_strings(self, values: List[str]) -> List[str]:
+        """Deduplicate while preserving order."""
+        seen = set()
+        unique = []
+        for value in values:
+            key = str(value)
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(key)
+        return unique
     
     def get_asset_ids_by_plate_numbers(
         self, 
@@ -68,56 +84,73 @@ class MongoDBHandler:
         """
         try:
             db = self.client[db_name]
+            all_assets_requested = self._is_all_selector(plate_numbers)
             normalized_variants = self._build_plate_variants(plate_numbers)
-            
-            # Execute aggregation query
-            match_stage: Dict[str, Any] = {
-                "_normalized_plate": {"$in": normalized_variants}
-            }
-            if sub_tenant_id:
-                match_stage["sub_tenant_id"] = sub_tenant_id
 
-            pipeline = [
-                {
-                    "$addFields": {
-                        "_normalized_plate": {
-                            "$toUpper": {
-                                "$replaceAll": {
-                                    "input": {
-                                        "$replaceAll": {
-                                            "input": {
-                                                "$replaceAll": {
-                                                    "input": "$details.plate_number",
-                                                    "find": " ",
-                                                    "replacement": ""
-                                                }
-                                            },
-                                            "find": "-",
-                                            "replacement": ""
-                                        }
-                                    },
-                                    "find": "_",
-                                    "replacement": ""
-                                }
-                            }
-                        }
-                    }
-                },
-                {
-                    "$match": match_stage
-                },
-                {
+            if all_assets_requested:
+                match_stage: Dict[str, Any] = {}
+                if sub_tenant_id:
+                    match_stage["sub_tenant_id"] = sub_tenant_id
+
+                pipeline = []
+                if match_stage:
+                    pipeline.append({"$match": match_stage})
+                pipeline.append({
                     "$project": {
                         "_id": 1,
                         "plate_number": "$details.plate_number"
                     }
+                })
+            else:
+                # Execute aggregation query by specific plate values.
+                match_stage = {
+                    "_normalized_plate": {"$in": normalized_variants}
                 }
-            ]
+                if sub_tenant_id:
+                    match_stage["sub_tenant_id"] = sub_tenant_id
+
+                pipeline = [
+                    {
+                        "$addFields": {
+                            "_normalized_plate": {
+                                "$toUpper": {
+                                    "$replaceAll": {
+                                        "input": {
+                                            "$replaceAll": {
+                                                "input": {
+                                                    "$replaceAll": {
+                                                        "input": "$details.plate_number",
+                                                        "find": " ",
+                                                        "replacement": ""
+                                                    }
+                                                },
+                                                "find": "-",
+                                                "replacement": ""
+                                            }
+                                        },
+                                        "find": "_",
+                                        "replacement": ""
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    {
+                        "$match": match_stage
+                    },
+                    {
+                        "$project": {
+                            "_id": 1,
+                            "plate_number": "$details.plate_number"
+                        }
+                    }
+                ]
             
             print(f"\n--- MongoDB Query (Asset by Plate Numbers) ---")
             print(f"Database: {db_name}")
             print(f"Collection: Asset")
             print(f"SubTenantId: {sub_tenant_id}")
+            print(f"AllAssetsRequested: {all_assets_requested}")
             print(f"Normalized Variants: {normalized_variants}")
             print(f"Pipeline: {pipeline}")
             
@@ -130,12 +163,14 @@ class MongoDBHandler:
             print(f"\n--- MongoDB Query Result ---")
             print(f"Found {len(results)} asset(s)")
             print(f"Results: {results}")
+
+            asset_ids = self._unique_strings([r["_id"] for r in results])
             
             return {
                 "success": True,
                 "count": len(results),
                 "assets": results,
-                "asset_ids": [r["_id"] for r in results]
+                "asset_ids": asset_ids
             }
             
         except PyMongoError as e:
@@ -167,28 +202,37 @@ class MongoDBHandler:
         """
         try:
             db = self.client[db_name]
-            
-            # Execute aggregation query
-            group_match: Dict[str, Any] = {"name": {"$in": group_names}}
-            if sub_tenant_id:
-                group_match["sub_tenant_id"] = sub_tenant_id
+            all_groups_requested = self._is_all_selector(group_names)
 
-            pipeline = [
-                {"$match": group_match},
+            if all_groups_requested:
+                group_match: Dict[str, Any] = {}
+                if sub_tenant_id:
+                    group_match["sub_tenant_id"] = sub_tenant_id
+            else:
+                group_match = {"name": {"$in": group_names}}
+                if sub_tenant_id:
+                    group_match["sub_tenant_id"] = sub_tenant_id
+
+            pipeline = []
+            if group_match:
+                pipeline.append({"$match": group_match})
+            pipeline.extend([
                 {"$unwind": "$assigned_assets"},
                 {
                     "$project": {
                         "_id": 0,
+                        "group_id": "$_id",
                         "deviceGroup": "$name",
                         "asset_id": "$assigned_assets.asset_id"
                     }
                 }
-            ]
+            ])
             
             print(f"\n--- MongoDB Query (Asset by Group Names) ---")
             print(f"Database: {db_name}")
             print(f"Collection: AssetGroup")
             print(f"SubTenantId: {sub_tenant_id}")
+            print(f"AllGroupsRequested: {all_groups_requested}")
             print(f"Pipeline: {pipeline}")
             
             results = list(db.AssetGroup.aggregate(pipeline))
@@ -196,16 +240,22 @@ class MongoDBHandler:
             # Convert ObjectId to string
             for result in results:
                 result["asset_id"] = str(result["asset_id"])
+                if "group_id" in result:
+                    result["group_id"] = str(result["group_id"])
             
             print(f"\n--- MongoDB Query Result ---")
             print(f"Found {len(results)} asset(s)")
             print(f"Results: {results}")
+
+            asset_ids = self._unique_strings([r["asset_id"] for r in results])
+            group_ids = self._unique_strings([r["group_id"] for r in results if r.get("group_id") is not None])
             
             return {
                 "success": True,
                 "count": len(results),
                 "assets": results,
-                "asset_ids": [r["asset_id"] for r in results]
+                "asset_ids": asset_ids,
+                "group_ids": group_ids
             }
             
         except PyMongoError as e:
@@ -221,7 +271,8 @@ class MongoDBHandler:
     def get_driver_ids_by_names(
         self, 
         db_name: str, 
-        driver_names: List[str]
+        driver_names: List[str],
+        sub_tenant_id: str | None = None
     ) -> Dict[str, Any]:
         """
         Retrieve driver IDs by driver names
@@ -235,33 +286,63 @@ class MongoDBHandler:
         """
         try:
             db = self.client[db_name]
-            
-            # Execute aggregation query
-            pipeline = [
-                {
-                    "$match": {
-                        "$expr": {
-                            "$in": [
-                                {"$concat": ["$profile.first_name", " ", "$profile.last_name"]},
-                                driver_names
-                            ]
-                        }
-                    }
-                },
-                {"$unwind": "$asset_assignments"},
-                {
+            all_drivers_requested = self._is_all_selector(driver_names)
+
+            if all_drivers_requested:
+                match_stage: Dict[str, Any] = {}
+                if sub_tenant_id:
+                    match_stage["sub_tenant_id"] = sub_tenant_id
+
+                pipeline = []
+                if match_stage:
+                    pipeline.append({"$match": match_stage})
+                pipeline.append({
                     "$project": {
                         "_id": 0,
                         "driver_id": "$_id",
-                        "driver_name": {"$concat": ["$profile.first_name", " ", "$profile.last_name"]},
-                        "assignment_id": "$asset_assignments._id"
+                        "driver_name": {
+                            "$trim": {
+                                "input": {
+                                    "$concat": [
+                                        {"$ifNull": ["$profile.first_name", ""]},
+                                        " ",
+                                        {"$ifNull": ["$profile.last_name", ""]}
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                })
+            else:
+                match_stage: Dict[str, Any] = {
+                    "$expr": {
+                        "$in": [
+                            {"$concat": ["$profile.first_name", " ", "$profile.last_name"]},
+                            driver_names
+                        ]
                     }
                 }
-            ]
+                if sub_tenant_id:
+                    match_stage["sub_tenant_id"] = sub_tenant_id
+
+                pipeline = [
+                    {"$match": match_stage},
+                    {"$unwind": "$asset_assignments"},
+                    {
+                        "$project": {
+                            "_id": 0,
+                            "driver_id": "$_id",
+                            "driver_name": {"$concat": ["$profile.first_name", " ", "$profile.last_name"]},
+                            "assignment_id": "$asset_assignments._id"
+                        }
+                    }
+                ]
             
             print(f"\n--- MongoDB Query (Driver by Names) ---")
             print(f"Database: {db_name}")
             print(f"Collection: Driver")
+            print(f"SubTenantId: {sub_tenant_id}")
+            print(f"AllDriversRequested: {all_drivers_requested}")
             print(f"Pipeline: {pipeline}")
             
             results = list(db.Driver.aggregate(pipeline))
@@ -275,12 +356,14 @@ class MongoDBHandler:
             print(f"\n--- MongoDB Query Result ---")
             print(f"Found {len(results)} driver(s)")
             print(f"Results: {results}")
+
+            driver_ids = self._unique_strings([r["driver_id"] for r in results])
             
             return {
                 "success": True,
                 "count": len(results),
                 "drivers": results,
-                "driver_ids": [r["driver_id"] for r in results]
+                "driver_ids": driver_ids
             }
             
         except PyMongoError as e:

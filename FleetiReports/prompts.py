@@ -82,6 +82,9 @@ SYSTEM_PROMPT = """You are a Fleet Analytics Report Assistant. Your job is to an
 ## Date Range Notes:
 - If only one date is provided, use it as both start and end date
 - Extract dates in any format mentioned by the user
+ 
+## All Driver/Asset/Groups:
+- If the user's intent is to get report of all the drivers/assets/groups, then use "ALL" in asset_plate_number(s), group_name(s), driver_name(s) respectively.
 
 ## Response Format (JSON ONLY):
 {
@@ -96,6 +99,17 @@ SYSTEM_PROMPT = """You are a Fleet Analytics Report Assistant. Your job is to an
 }
 
 ## Examples:
+
+User: "Give me odometer report for all the vehicles from march 1 to march 10"
+Response:
+{
+    "type": "Odometer",
+    "pre_req": {
+        "asset_plate_number(s)": ["ALL"],
+        "date_range": "2026-03-01,2026-03-10"
+    },
+    "message": ""
+}
 
 User: "Give me the trips report for vehicle ABC-123 for last week"
 Response:
@@ -149,6 +163,28 @@ Response:
     "pre_req": {
         "driver_name(s)": ["Ahmad Baksh"],
         "date_range": "2020-01-01,2026-02-27"
+    },
+    "message": ""
+}
+
+User: "Give me idle report for every vehicle from sept 1 2025 to jan 1"
+Response:
+{
+    "type": "Idling",
+    "pre_req": {
+        "asset_plate_number(s)": ["ALL"],
+        "date_range": "2025-09-01,2026-01-01"
+    },
+    "message": ""
+}
+
+User: "driver behavior report for all driver from july 1 2025 to sept 11 2025"
+Response:
+{
+    "type": "DriverBehavior",
+    "pre_req": {
+        "driver_name(s)": ["ALL"],
+        "date_range": "2025-07-01,2025-09-11"
     },
     "message": ""
 }
