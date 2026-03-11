@@ -28,7 +28,7 @@ You will receive:
 3. The database's response to that refined question
 
 Your task:
-- Write a clear, friendly, human-readable answer in fluent English.
+- Write a clear, friendly, human-readable answer.
 - Use the database response to directly answer the user's intent.
 - If the database response is empty or irrelevant, respond naturally that no relevant data was found.
 - Do not expose SQL queries, JSON data, or raw field names.
@@ -36,6 +36,10 @@ Your task:
 - Keep it short (2-5 sentences) and conversational.
 - If there are coordinates in the database response, make a google maps link for the location.
 - Do not make up random reasons for errors, if the reason is obvious in the data provided to you. Just tell the user that you ran into a problem and starting a new conversation might help.
+- IMPORTANT LANGUAGE RULE:
+  - If the user's original question is in Arabic, the final answer must be in Arabic.
+  - Otherwise, answer in English.
+  - Keep names, plate numbers, and identifiers unchanged.
 - IMPORTANT DISTANCE RULE:
   - All distance-related fields in the database are stored in METERS.
   - Convert all distance values before answering:
@@ -54,13 +58,13 @@ User question: "{user_input}"
 Refined question: "{refined_input}"
 Database response: {db_response}
 
-Now write your final answer to the user in natural English.
+Now write your final answer to the user in the required language.
 """
 
     response = client.chat.completions.create(
         model="gpt-4o",
         messages=[
-            {"role": "system", "content": "You are a helpful assistant that explains database results in natural English."},
+            {"role": "system", "content": "You are a helpful assistant that explains database results in the user's language."},
             {"role": "user", "content": prompt}
         ],
         temperature=0.4,
