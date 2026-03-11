@@ -362,9 +362,10 @@ def _dedupe_report_api_response(api_response: Any) -> Any:
 async def _process_report_request(
     llm_response: LLMResponse,
     db_name: str,
-    sub_tenant_id: str,
+    sub_tenant_id: Optional[str],
     api_handler: APIHandler,
-    user_time_zone: Optional[str] = None
+    user_time_zone: Optional[str] = None,
+    remove_sub_tenant_match: bool = False
 ) -> Dict[str, Any]:
     result: Dict[str, Any] = {"mongodb_query_result": None, "api_response": None}
     report_type = llm_response.type
@@ -372,12 +373,14 @@ async def _process_report_request(
     if not pre_req:
         return result
 
+    resolved_sub_tenant_id = None if remove_sub_tenant_match else sub_tenant_id
+
     asset_ids = None
     if pre_req.asset_plate_numbers:
         query_result = mongo_handler.get_asset_ids_by_plate_numbers(
             db_name,
             pre_req.asset_plate_numbers,
-            sub_tenant_id=sub_tenant_id
+            sub_tenant_id=resolved_sub_tenant_id
         )
         result["mongodb_query_result"] = query_result
         if query_result["success"] and query_result["asset_ids"]:
@@ -386,7 +389,7 @@ async def _process_report_request(
         query_result = mongo_handler.get_asset_ids_by_group_names(
             db_name,
             pre_req.group_names,
-            sub_tenant_id=sub_tenant_id
+            sub_tenant_id=resolved_sub_tenant_id
         )
         result["mongodb_query_result"] = query_result
         if query_result["success"] and query_result["asset_ids"]:
@@ -806,12 +809,17 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(defau
                     )
                 else:
                     # Message is empty - process report request
+                    remove_sub_tenant_match_for_reports = _should_remove_sub_tenant_match(
+                        sub_tenant_id=sub_tenant_id,
+                        base_url=request.base_url
+                    )
                     processing_result = await _process_report_request(
                         report_llm_response,
                         mongo_db,
                         sub_tenant_id,
                         reports_api_handler,
-                        request.time_zone
+                        request.time_zone,
+                        remove_sub_tenant_match=remove_sub_tenant_match_for_reports
                     )
                     api_response_data = processing_result.get("api_response")
                     mongodb_query_result = processing_result.get("mongodb_query_result")
