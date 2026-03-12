@@ -367,7 +367,12 @@ async def _process_report_request(
     user_time_zone: Optional[str] = None,
     remove_sub_tenant_match: bool = False
 ) -> Dict[str, Any]:
-    result: Dict[str, Any] = {"mongodb_query_result": None, "api_response": None}
+    result: Dict[str, Any] = {
+        "mongodb_query_result": None,
+        "api_response": None,
+        "start_datetime": None,
+        "end_datetime": None
+    }
     report_type = llm_response.type
     pre_req = llm_response.pre_req
     if not pre_req:
@@ -443,6 +448,10 @@ async def _process_report_request(
             )
 
     result["api_response"] = _dedupe_report_api_response(result.get("api_response"))
+    # Expose normalized UTC date-time range only when date range existed and report call was made.
+    if start_date and end_date and result.get("api_response") is not None:
+        result["start_datetime"] = start_date
+        result["end_datetime"] = end_date
     return result
 
 
@@ -824,6 +833,8 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(defau
                     )
                     api_response_data = processing_result.get("api_response")
                     mongodb_query_result = processing_result.get("mongodb_query_result")
+                    report_start_datetime = processing_result.get("start_datetime")
+                    report_end_datetime = processing_result.get("end_datetime")
 
                     # If report API failed or returned empty result set, return text response instead of JSON
                     is_report_api_failure = (
@@ -867,6 +878,9 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(defau
                             "type": response_type,
                             "api_response": api_response_data
                         }
+                        if report_start_datetime and report_end_datetime:
+                            final_response["start_datetime"] = report_start_datetime
+                            final_response["end_datetime"] = report_end_datetime
 
                     # Save FleetiReports response as fleet message
                     history_saver.save_fleet_message(
