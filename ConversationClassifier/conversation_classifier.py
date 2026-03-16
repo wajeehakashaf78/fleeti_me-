@@ -156,6 +156,7 @@ Produce a refined version of the current user message that:
 - Preserves the user’s intent
 - Is ready to be sent to a READ-ONLY database/query layer
 - Is as complete as possible by carrying forward relevant context from the conversation history WHEN it is safe and clearly intended
+- Do NOT replace 'Fleet summary report' request with 'Fleet Performance Summary' report in your refinement and vice versa. These are two completly different report types.
 
 You are allowed (and expected) to add missing context ONLY when ALL conditions below hold:
 
