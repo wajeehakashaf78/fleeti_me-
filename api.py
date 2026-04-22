@@ -10,7 +10,7 @@ import os
 import json
 import ast
 import re
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 from datetime import datetime, timezone, timedelta
 from urllib.parse import urlparse
 from dotenv import load_dotenv
@@ -139,6 +139,142 @@ def _should_remove_sub_tenant_match(sub_tenant_id: str, base_url: Optional[str])
     if not host or not sub_tenant_id:
         return False
     return host == sub_tenant_id.strip().lower().strip(".")
+
+
+# Collections that carry sub_tenant_id directly on documents.
+# Any aggregation starting from one of these MUST filter by sub_tenant_id in
+# its first $match; the guardrail below enforces this even when the LLM
+# forgets. Collections NOT in this set (AlertHistory, Trip, DailyAnalytics,
+# ...) must instead $lookup into one of these and filter via the join.
+TENANT_AWARE_COLLECTIONS = frozenset({
+    "AlertRule", "Asset", "AvlRecord", "AvlRecordLatest",
+    "Device", "Driver", "Events", "Geofence",
+})
+
+
+def _extract_starting_collection(query_str: str) -> Optional[str]:
+    """Return the collection name from 'db.<Collection>.(aggregate|find)(...)'."""
+    m = re.search(r"db\.([A-Za-z0-9_]+)\.(aggregate|find)\s*\(", query_str)
+    return m.group(1) if m else None
+
+
+def _find_first_match_body_span(query_str: str) -> Optional[Tuple[int, int]]:
+    """
+    Locate the body braces of the first $match stage in an aggregate pipeline.
+    Returns (open_brace_idx, close_brace_idx) or None if not found.
+    Walks braces with string-awareness so constructors like ISODate("...")
+    containing '{' or '}' would not break the depth count.
+    """
+    m = re.search(
+        r"aggregate\s*\(\s*\[\s*\{\s*[\"']\$match[\"']\s*:\s*\{",
+        query_str,
+    )
+    if not m:
+        return None
+    open_idx = m.end() - 1  # index of the match body's opening '{'
+    depth = 0
+    in_str = False
+    str_ch: Optional[str] = None
+    escape = False
+    for i in range(open_idx, len(query_str)):
+        ch = query_str[i]
+        if escape:
+            escape = False
+            continue
+        if ch == "\\":
+            escape = True
+            continue
+        if in_str:
+            if ch == str_ch:
+                in_str = False
+                str_ch = None
+            continue
+        if ch == '"' or ch == "'":
+            in_str = True
+            str_ch = ch
+            continue
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return open_idx, i
+    return None
+
+
+def _enforce_sub_tenant_filter(
+    query_str: str,
+    tenant_value: str,
+) -> Tuple[str, Optional[str]]:
+    """
+    Guarantee tenant isolation on a generated aggregation query.
+
+    Returns (possibly modified query, error_message). When error_message is
+    not None, the caller MUST reject the query instead of executing it.
+
+    Rules:
+      - Starting collection in TENANT_AWARE_COLLECTIONS:
+          * First $match already filters by sub_tenant_id → no change.
+          * First $match exists but missing sub_tenant_id → inject it.
+          * No leading $match stage → prepend one with sub_tenant_id.
+          * Not an aggregate pipeline (e.g. find()) → reject.
+      - Starting collection not tenant-aware (AlertHistory, Trip, ...):
+          * Require $lookup into a tenant-aware collection AND a
+            sub_tenant_id filter somewhere, else reject.
+    """
+    coll = _extract_starting_collection(query_str)
+    if not coll:
+        # Unparseable shape — let the downstream parser produce the real error.
+        return query_str, None
+
+    if coll in TENANT_AWARE_COLLECTIONS:
+        span = _find_first_match_body_span(query_str)
+        if span is not None:
+            open_idx, close_idx = span
+            body = query_str[open_idx + 1 : close_idx]
+            if re.search(r"[\"']sub_tenant_id[\"']\s*:", body):
+                return query_str, None  # already filtered
+            injection = f'"sub_tenant_id": "{tenant_value}"'
+            if body.strip():
+                injection += ", "
+            insert_pos = open_idx + 1
+            return (
+                query_str[:insert_pos] + injection + query_str[insert_pos:],
+                None,
+            )
+
+        # No leading $match. Prepend one right after 'aggregate(['.
+        prep = re.search(r"aggregate\s*\(\s*\[", query_str)
+        if not prep:
+            return query_str, (
+                f"Query on tenant-aware collection '{coll}' is not an "
+                f"aggregate pipeline; refusing to run without sub_tenant_id."
+            )
+        insert_pos = prep.end()
+        new_stage = f'{{"$match": {{"sub_tenant_id": "{tenant_value}"}}}}'
+        tail = query_str[insert_pos:].lstrip()
+        sep = "" if tail.startswith("]") else ", "
+        return (
+            query_str[:insert_pos] + new_stage + sep + query_str[insert_pos:],
+            None,
+        )
+
+    # Collection has no sub_tenant_id field: require a tenant-aware $lookup
+    # plus a sub_tenant_id filter somewhere in the pipeline.
+    lookup_targets = re.findall(
+        r"[\"']from[\"']\s*:\s*[\"']([A-Za-z0-9_]+)[\"']",
+        query_str,
+    )
+    has_tenant_lookup = any(t in TENANT_AWARE_COLLECTIONS for t in lookup_targets)
+    has_sub_tenant_key = re.search(
+        r"[\"'](?:[^\"']*\.)?sub_tenant_id[\"']\s*:", query_str
+    ) is not None
+    if has_tenant_lookup and has_sub_tenant_key:
+        return query_str, None
+    return query_str, (
+        f"Query on '{coll}' lacks tenant isolation: must $lookup into a "
+        f"tenant-aware collection and filter by sub_tenant_id."
+    )
 
 
 def _compact_assistant_for_llm_history(assistant_value: Any) -> str:
@@ -727,37 +863,45 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(defau
                             error=True
                         )
 
-                    remove_sub_tenant_match = _should_remove_sub_tenant_match(
-                        sub_tenant_id=sub_tenant_id,
-                        base_url=request.base_url
+                    # Always apply tenant isolation using the sub_tenant_id from
+                    # the JWT. Substitute the LLM's placeholder, then enforce the
+                    # guardrail so queries on tenant-aware collections always
+                    # carry a sub_tenant_id filter.
+                    patterns = [
+                        (r'("(?:[^"]*\.)?sub_tenant_id"\s*:\s*)"sub_tenant_id"', r'\1"' + sub_tenant_id + '"'),
+                        (r'("(?:[^"]*\.)?sub_tenant_id"\s*:\s*)\'sub_tenant_id\'', r'\1"' + sub_tenant_id + '"'),
+                        (r'(\'(?:[^\']*\.)?sub_tenant_id\'\s*:\s*)"sub_tenant_id"', r'\1"' + sub_tenant_id + '"'),
+                        (r'(\'(?:[^\']*\.)?sub_tenant_id\'\s*:\s*)\'sub_tenant_id\'', r'\1"' + sub_tenant_id + '"'),
+                    ]
+                    for pattern, replacement in patterns:
+                        mongoagent_response = re.sub(pattern, replacement, mongoagent_response)
+
+                    pre_guard = mongoagent_response
+                    mongoagent_response, guard_error = _enforce_sub_tenant_filter(
+                        mongoagent_response,
+                        sub_tenant_id,
                     )
+                    if guard_error:
+                        print(f"[SubTenantGuard] Rejected — {guard_error}")
+                        print(f"[SubTenantGuard] Query: {mongoagent_response[:500]}")
+                        return ChatResponse(
+                            human_response=_user_friendly_failure_message(),
+                            error=False
+                        )
+                    if mongoagent_response != pre_guard:
+                        print("[SubTenantGuard] Patched query to inject sub_tenant_id filter")
+                    else:
+                        print("[SubTenantGuard] Query already contained sub_tenant_id filter")
 
-                    if not remove_sub_tenant_match:
-                        # Replace placeholder sub_tenant_id with actual value
-                        # Handle multiple occurrences in the query with various quote styles and nested paths
-                        patterns = [
-                            # Match keys with double quotes, values with double quotes (handles nested paths)
-                            (r'("(?:[^"]*\.)?sub_tenant_id"\s*:\s*)"sub_tenant_id"', r'\1"' + sub_tenant_id + '"'),
-                            # Match keys with double quotes, values with single quotes
-                            (r'("(?:[^"]*\.)?sub_tenant_id"\s*:\s*)\'sub_tenant_id\'', r'\1"' + sub_tenant_id + '"'),
-                            # Match keys with single quotes, values with double quotes
-                            (r'(\'(?:[^\']*\.)?sub_tenant_id\'\s*:\s*)"sub_tenant_id"', r'\1"' + sub_tenant_id + '"'),
-                            # Match keys with single quotes, values with single quotes
-                            (r'(\'(?:[^\']*\.)?sub_tenant_id\'\s*:\s*)\'sub_tenant_id\'', r'\1"' + sub_tenant_id + '"'),
-                        ]
-
-                        for pattern, replacement in patterns:
-                            mongoagent_response = re.sub(pattern, replacement, mongoagent_response)
-                    
                     # Step 3: Execute query with dynamic mongo_db from JWT
                     query_runner = LlmMongoRunner(mongo_db=mongo_db)
-                    
+
                     try:
                         results = query_runner.run(
                             mongoagent_response,
                             limit=10,
                             user_time_zone=request.time_zone,
-                            remove_sub_tenant_match=remove_sub_tenant_match
+                            remove_sub_tenant_match=False,
                         )
                         
                         # Convert results to string

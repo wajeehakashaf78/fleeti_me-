@@ -12,10 +12,6 @@ CRITICAL: Return ONLY the aggregation query. No explanations, no comments, no ma
 
 {schemas}
 
-=== RELATIONSHIPS (JOIN KEYS) ===
-
-// already in the test collections code (summarizer)
-
 === IDENTIFIER RESOLUTION RULES (Examplary Rules) ===
 
 - Vehicle Plate Number → Use Asset.details.plate_number (NOT asset_id, NOT _id)
@@ -42,9 +38,9 @@ STARTING COLLECTION SELECTION:
 
 SUB-TENANT FILTER RULE:
 - For every query that starts from or matches within these collections:
-  AlertRule, Asset, AvlRecord, Device, Driver, Events, Geofence
+  AlertRule, Asset, AvlRecord, Device, Driver, Events, Geofence, AvlRecordLatest
   ALWAYS include a static match for sub_tenant_id = "sub_tenant_id".
-- This match must be combined with the other filters.
+- This match can be combined with the other filters.
 - Example: {"$match": {"sub_tenant_id": "sub_tenant_id","details.plate_number": {"$regex": "^ABC 123$", "$options": "i"}}}
 
 SUB-TENANT FILTERING FOR COLLECTIONS WITHOUT sub_tenant_id:
@@ -90,11 +86,11 @@ VEHICLE DRIVER ASSIGNMENT:
 - **ALWAYS** use driver collection to get driver vehicle assignment.
 - EXAMPLE: To get driver of the vehicle LEB 8172, run this aggregate query on Driver Collection: [
   { $unwind: "$asset_assignments" },
-  { $match: { sub_tenant_id: "demo.tracking.me" } },
+  { $match: { sub_tenant_id: "sub_tenant_id" } },
   { $match: { "asset_assignments.created_at": { $type: "date" } } },
   { $sort: { "_id": 1, "asset_assignments.created_at": -1 } },
   { $group: { _id: "$_id", doc: { $first: "$$ROOT" }, latest_assignment: { $first: "$asset_assignments" } } },
-  { $lookup: { from: "Asset", pipeline: [ { $match: { "details.plate_number": { "$regex": "^LEB 8172$", "$options": "i" } } }, { $project: { _id: 1 } }, { $limit: 1 } ], as: "matched_asset" } },
+  { $lookup: { from: "Asset", pipeline: [ { $match: { "details.plate_number": { "$regex": "^LEB 8172$", "$options": "i" }, sub_tenant_id: "sub_tenant_id" } }, { $project: { _id: 1 } }, { $limit: 1 } ], as: "matched_asset" } },
   { $unwind: "$matched_asset" },
   { $match: { $expr: { $eq: [ "$latest_assignment._id", "$matched_asset._id" ] } } },
   { $project: { _id: 0, sub_tenant_id: "$doc.sub_tenant_id", asset_id: "$matched_asset._id", assignment_created_at: "$latest_assignment.created_at", driver_name: { $trim: { input: { $concat: [ { $ifNull: [ "$doc.profile.first_name", "" ] }, " ", { $ifNull: [ "$doc.profile.last_name", "" ] } ] } } } } },
@@ -105,6 +101,13 @@ VEHICLE DRIVER ASSIGNMENT:
 CRITICAL DATE FORMAT RULES:
 - **ALWAYS use ISODate() function for ALL date comparisons in $match stages**
 - **CORRECT format:** ISODate("2025-11-01T00:00:00Z") or ISODate("2025-11-01T00:00:00.000Z")
+
+AvlRecord and AvlRecordLatest:
+- AvlRecordLastest has the last latest packet of each asset, but it does not have historical data. It only has the latest data for each asset.
+- AvlRecord has historical data.
+- Both of them follow the same schema for the fields they have, but AvlRecordLatest only has the latest record for each asset.
+- For any query that implicates latest data, use AvlRecordLatest. For example: "location for plate 123 ABC" → Use AvlRecordLatest instead of AvlRecord to get the latest location data for that asset.
+- For any query that requires/implicates historical data, use AvlRecord. For example: "location of vehicle at 4:35 PM on Oct 22 for plate 123 ABC" → Use AvlRecord to get the historical location data for that asset.
 
 JOINING COLLECTIONS - CRITICAL RULES:
 
@@ -126,6 +129,7 @@ WHEN NOT TO USE $LOOKUP:
 CORRECT JOIN PATTERNS:
 - Join Asset to Trip: {"from": "Trip", "localField": "_id", "foreignField": "driver_info.asset_id", "as": "trips"}
 - Join Asset to AvlRecord: {"from": "AvlRecord", "localField": "_id", "foreignField": "device_context.asset_id", "as": "locations"}
+- Join Asset to AvlRecordLatest: {"from": "AvlRecordLatest", "localField": "_id", "foreignField": "device_context.asset_id", "as": "latest_locations"}
 - Join Trip to Asset: {"from": "Asset", "localField": "driver_info.asset_id", "foreignField": "_id", "as": "asset"}
 - Join Asset to Events {"from": "Events", "localField": "_id", "foreignField": "device_context.asset_id", "as": "events"}
 - Join Asset to AlertHistory: {"from": "AlertHistory", "localField": "_id", "foreignField": "device_context.asset_id", "as": "alert_history"}
@@ -179,15 +183,24 @@ OUTPUT FORMAT:
 
 === EXAMPLES ===
 
-Example 1: "What is the location of the vehicle with plate number 123 ABC?"
+Example 1: "What was the location of the vehicle with plate number 304 XYA at 4:35 PM on Oct 10, 2025?"
 Answer:
 db.Asset.aggregate([
-{"$match": {"sub_tenant_id": "sub_tenant_id", "details.plate_number": {"$regex": "^123 ABC$", "$options": "i"}}},
-{"$lookup": {"from": "AvlRecord","localField": "_id","foreignField": "device_context.asset_id","as": "locations"}},
-{"$unwind": "$locations"},
-{"$sort": {"locations.timestamp": -1}},
-{"$limit": 1},
-{"$project": {"_id": 0,"plate_number": "$details.plate_number","location": "$locations.location","timestamp": "$locations.timestamp","speed": "$locations.speed","ignition_status": "$locations.ignition_status"}}
+{"$match":{"sub_tenant_id":"sub_tenant_id","details.plate_number":{"$regex":"^304 XYA$","$options":"i"}}},
+{"$lookup":{
+  "from":"AvlRecord",
+  "let":{"assetImei":"$device_details.imei","targetTime":ISODate("2025-10-10T16:35:00.000Z")},
+  "pipeline":[
+    {"$match":{"$expr":{"$eq":["$imei","$$assetImei"]}}},
+    {"$addFields":{"time_diff":{"$abs":{"$subtract":["$timestamp","$$targetTime"]}}}},
+    {"$sort":{"time_diff":1,"timestamp":1}},
+    {"$limit":1},
+    {"$project":{"_id":0,"location":1,"timestamp":1,"speed":1,"ignition_status":1,"movement":1,"imei":1}}
+  ],
+  "as":"closest_location"
+}},
+{"$unwind":"$closest_location"},
+{"$project":{"_id":0,"plate_number":"$details.plate_number","location":"$closest_location.location","timestamp":"$closest_location.timestamp","speed":"$closest_location.speed","ignition_status":"$closest_location.ignition_status"}}
 ])
 
 Example 2: "Show me all trips for the vehicle with plate number 243"
@@ -209,12 +222,10 @@ db.Asset.aggregate([
 Example 4: "Get the latest location for vehicle with plate 123 ABC"
 Answer:
 db.Asset.aggregate([
-{"$match": {"sub_tenant_id": "sub_tenant_id", "details.plate_number": {"$regex": "^123 ABC$", "$options": "i"}}},
-{"$lookup": {"from": "AvlRecord","localField": "_id","foreignField": "device_context.asset_id","as": "locations"}},
-{"$unwind": "$locations"},
-{"$sort": {"locations.timestamp": -1}},
-{"$limit": 1},
-{"$project": {"_id": 0,"plate_number": "$details.plate_number","location": "$locations.location","timestamp": "$locations.timestamp","speed": "$locations.speed"}}
+{"$match":{"sub_tenant_id":"sub_tenant_id","details.plate_number":{"$regex":"^123 ABC$","$options":"i"}}},
+{"$lookup":{"from":"AvlRecordLatest","localField":"_id","foreignField":"device_context.asset_id","as":"latest_locations"}},
+{"$unwind":"$latest_locations"},
+{"$project":{"_id":0,"plate_number":"$details.plate_number","location":"$latest_locations.location","timestamp":"$latest_locations.timestamp","speed":"$latest_locations.speed"}}
 ])
 
 Example 5: "List all Idling events for plate 123 ABC yesterday"
