@@ -128,15 +128,21 @@ def _extract_hostname(base_url: Optional[str]) -> Optional[str]:
     return parsed.hostname.strip().lower().strip(".")
 
 
-def _should_remove_sub_tenant_match(sub_tenant_id: str, base_url: Optional[str]) -> bool:
+def _should_remove_sub_tenant_match(sub_tenant_id: Optional[str], base_url: Optional[str]) -> bool:
     """
-    Remove sub_tenant_id query filters when FE base URL host equals JWT sub_tenant_id.
-    Example:
-      sub_tenant_id = "demo.tracking.me"
-      base_url = "https://demo.tracking.me/"
+    Skip sub_tenant_id query filtering when either:
+      - The JWT did not provide a sub_tenant_id (nothing to filter by), or
+      - The FE base URL host equals the JWT sub_tenant_id (the subdomain
+        already scopes the data, so an additional filter is redundant).
+    Examples:
+      sub_tenant_id = "demo.tracking.me", base_url = "https://demo.tracking.me/"  -> True
+      sub_tenant_id = None or "",         base_url = anything                      -> True
+      sub_tenant_id = "tenantA",          base_url = "https://app.tracking.me/"    -> False
     """
+    if not sub_tenant_id:
+        return True
     host = _extract_hostname(base_url)
-    if not host or not sub_tenant_id:
+    if not host:
         return False
     return host == sub_tenant_id.strip().lower().strip(".")
 
@@ -259,21 +265,19 @@ def _enforce_sub_tenant_filter(
             None,
         )
 
-    # Collection has no sub_tenant_id field: require a tenant-aware $lookup
-    # plus a sub_tenant_id filter somewhere in the pipeline.
+    # Collection has no sub_tenant_id field: must $lookup into a tenant-aware
+    # collection. execute.py will inject the sub_tenant_id filter into that
+    # $lookup's sub-pipeline, so we only reject if no such $lookup exists.
     lookup_targets = re.findall(
         r"[\"']from[\"']\s*:\s*[\"']([A-Za-z0-9_]+)[\"']",
         query_str,
     )
     has_tenant_lookup = any(t in TENANT_AWARE_COLLECTIONS for t in lookup_targets)
-    has_sub_tenant_key = re.search(
-        r"[\"'](?:[^\"']*\.)?sub_tenant_id[\"']\s*:", query_str
-    ) is not None
-    if has_tenant_lookup and has_sub_tenant_key:
+    if has_tenant_lookup:
         return query_str, None
     return query_str, (
-        f"Query on '{coll}' lacks tenant isolation: must $lookup into a "
-        f"tenant-aware collection and filter by sub_tenant_id."
+        f"Query on '{coll}' has no $lookup into a tenant-aware collection; "
+        f"cannot enforce tenant isolation."
     )
 
 
@@ -646,17 +650,20 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(defau
         token_payload = decode_jwt_no_verify(authorization)
         mongo_db, sub_tenant_id = extract_db_and_sub_tenant(token_payload)
 
-        if not mongo_db or not sub_tenant_id:
+        if not mongo_db:
             return ChatResponse(
-                human_response="Invalid token: missing database or sub-tenant information.",
+                human_response="Invalid token: missing database information.",
                 error=True
             )
+        # sub_tenant_id may be absent — when missing (or when the FE base URL
+        # already scopes the tenant), the chat flow runs without a tenant
+        # filter and any model-emitted sub_tenant_id is stripped before exec.
 
         # Scenario 1: Create session with static assistant message
         if request.assistant_static_input is not None:
             history_saver = FleetiHistorySaver(
                 session_id="static_session",
-                sub_tenant_id=sub_tenant_id,
+                sub_tenant_id=sub_tenant_id or "",
                 mongo_db=mongo_db,
             )
             session_id = history_saver.save_static_message(request.assistant_static_input)
@@ -676,7 +683,7 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(defau
         # Initialize history saver with dynamic session_id and sub_tenant_id
         history_saver = FleetiHistorySaver(
             session_id=request.session_id,
-            sub_tenant_id=sub_tenant_id,
+            sub_tenant_id=sub_tenant_id or "",
             mongo_db=mongo_db,
         )
 
@@ -856,44 +863,55 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(defau
                         .replace("{refined_message}", refined_message)
                     )
                     mongoagent_response = mongoagent_orchistrator_main(full_prompt)
-                    
+
+                    print("\n" + "=" * 60)
+                    print("🤖 GPT-4o Raw Query:")
+                    print(mongoagent_response)
+                    print("=" * 60 + "\n")
+
                     if not mongoagent_response:
                         return ChatResponse(
                             human_response="I couldn't generate a database query for your question. Please try rephrasing.",
                             error=True
                         )
 
-                    # Always apply tenant isolation using the sub_tenant_id from
-                    # the JWT. Substitute the LLM's placeholder, then enforce the
-                    # guardrail so queries on tenant-aware collections always
-                    # carry a sub_tenant_id filter.
-                    patterns = [
-                        (r'("(?:[^"]*\.)?sub_tenant_id"\s*:\s*)"sub_tenant_id"', r'\1"' + sub_tenant_id + '"'),
-                        (r'("(?:[^"]*\.)?sub_tenant_id"\s*:\s*)\'sub_tenant_id\'', r'\1"' + sub_tenant_id + '"'),
-                        (r'(\'(?:[^\']*\.)?sub_tenant_id\'\s*:\s*)"sub_tenant_id"', r'\1"' + sub_tenant_id + '"'),
-                        (r'(\'(?:[^\']*\.)?sub_tenant_id\'\s*:\s*)\'sub_tenant_id\'', r'\1"' + sub_tenant_id + '"'),
-                    ]
-                    for pattern, replacement in patterns:
-                        mongoagent_response = re.sub(pattern, replacement, mongoagent_response)
-
-                    pre_guard = mongoagent_response
-                    mongoagent_response, guard_error = _enforce_sub_tenant_filter(
-                        mongoagent_response,
-                        sub_tenant_id,
+                    # Decide whether to apply tenant isolation. Skip when the
+                    # JWT has no sub_tenant_id, or when the FE base URL host
+                    # already equals the JWT sub_tenant_id (subdomain scoping).
+                    remove_sub_tenant_match = _should_remove_sub_tenant_match(
+                        sub_tenant_id=sub_tenant_id,
+                        base_url=request.base_url,
                     )
-                    if guard_error:
-                        print(f"[SubTenantGuard] Rejected — {guard_error}")
-                        print(f"[SubTenantGuard] Query: {mongoagent_response[:500]}")
-                        return ChatResponse(
-                            human_response=_user_friendly_failure_message(),
-                            error=False
-                        )
-                    if mongoagent_response != pre_guard:
-                        print("[SubTenantGuard] Patched query to inject sub_tenant_id filter")
-                    else:
-                        print("[SubTenantGuard] Query already contained sub_tenant_id filter")
 
-                    # Step 3: Execute query with dynamic mongo_db from JWT
+                    if not remove_sub_tenant_match:
+                        # Apply tenant isolation: substitute the LLM placeholder,
+                        # then enforce the guardrail so the first $match always
+                        # carries the JWT sub_tenant_id.
+                        patterns = [
+                            (r'("(?:[^"]*\.)?sub_tenant_id"\s*:\s*)"sub_tenant_id"', r'\1"' + sub_tenant_id + '"'),
+                            (r'("(?:[^"]*\.)?sub_tenant_id"\s*:\s*)\'sub_tenant_id\'', r'\1"' + sub_tenant_id + '"'),
+                            (r'(\'(?:[^\']*\.)?sub_tenant_id\'\s*:\s*)"sub_tenant_id"', r'\1"' + sub_tenant_id + '"'),
+                            (r'(\'(?:[^\']*\.)?sub_tenant_id\'\s*:\s*)\'sub_tenant_id\'', r'\1"' + sub_tenant_id + '"'),
+                        ]
+                        for pattern, replacement in patterns:
+                            mongoagent_response = re.sub(pattern, replacement, mongoagent_response)
+
+                        mongoagent_response, guard_error = _enforce_sub_tenant_filter(
+                            mongoagent_response,
+                            sub_tenant_id,
+                        )
+                        if guard_error:
+                            print(f"[SubTenantGuard] Rejected — {guard_error}")
+                            print(f"[SubTenantGuard] Query: {mongoagent_response[:500]}")
+                            return ChatResponse(
+                                human_response=_user_friendly_failure_message(),
+                                error=False
+                            )
+
+                    # Step 3: Execute query with dynamic mongo_db from JWT.
+                    # When remove_sub_tenant_match is True, the runner strips
+                    # any model-emitted sub_tenant_id from the payload and
+                    # logs the final query exactly once before execution.
                     query_runner = LlmMongoRunner(mongo_db=mongo_db)
 
                     try:
@@ -901,7 +919,8 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(defau
                             mongoagent_response,
                             limit=10,
                             user_time_zone=request.time_zone,
-                            remove_sub_tenant_match=False,
+                            remove_sub_tenant_match=remove_sub_tenant_match,
+                            sub_tenant_id=sub_tenant_id if not remove_sub_tenant_match else None,
                         )
                         
                         # Convert results to string

@@ -22,6 +22,13 @@ except ImportError:
 
 MongoPayload = Union[List[Dict[str, Any]], Dict[str, Any]]
 
+# Collections that carry sub_tenant_id directly on their documents.
+# Must match the same set defined in api.py.
+_TENANT_AWARE_COLLECTIONS = frozenset({
+    "AlertRule", "Asset", "AvlRecord", "AvlRecordLatest",
+    "Device", "Driver", "Events", "Geofence",
+})
+
 # ---------------------------
 # String cleanup & extraction
 # ---------------------------
@@ -534,15 +541,32 @@ def _strip_sub_tenant_match_from_payload(op: str, payload: MongoPayload) -> Mong
     """
     Remove sub_tenant_id filters from:
     - aggregate pipeline $match stages
+    - $lookup sub-pipeline $match stages
     - find filter object
     """
     if op == "aggregate" and isinstance(payload, list):
         cleaned_pipeline: List[Dict[str, Any]] = []
         for stage in payload:
-            if isinstance(stage, dict) and isinstance(stage.get("$match"), dict):
+            if not isinstance(stage, dict):
+                cleaned_pipeline.append(stage)
+                continue
+            if isinstance(stage.get("$match"), dict):
                 stage_copy = dict(stage)
                 stage_copy["$match"] = _strip_sub_tenant_from_filter(stage_copy["$match"])
                 cleaned_pipeline.append(stage_copy)
+            elif isinstance(stage.get("$lookup"), dict):
+                lookup = dict(stage["$lookup"])
+                if isinstance(lookup.get("pipeline"), list):
+                    sub_pipeline = []
+                    for sub_stage in lookup["pipeline"]:
+                        if isinstance(sub_stage, dict) and isinstance(sub_stage.get("$match"), dict):
+                            sub_copy = dict(sub_stage)
+                            sub_copy["$match"] = _strip_sub_tenant_from_filter(sub_copy["$match"])
+                            sub_pipeline.append(sub_copy)
+                        else:
+                            sub_pipeline.append(sub_stage)
+                    lookup["pipeline"] = sub_pipeline
+                cleaned_pipeline.append({"$lookup": lookup})
             else:
                 cleaned_pipeline.append(stage)
         return cleaned_pipeline
@@ -556,6 +580,88 @@ def _strip_sub_tenant_match_from_payload(op: str, payload: MongoPayload) -> Mong
             return _strip_sub_tenant_from_filter(payload)
 
     return payload
+
+
+def _inject_sub_tenant_into_lookup_pipeline(
+    sub_pipeline: List[Dict[str, Any]], tenant_value: str
+) -> List[Dict[str, Any]]:
+    """
+    Ensure sub_tenant_id is present in the first $match of a $lookup sub-pipeline.
+    Injects at the head of the first $match body if absent; prepends a new $match if
+    no $match stage exists at all.
+    """
+    for i, stage in enumerate(sub_pipeline):
+        if isinstance(stage, dict) and isinstance(stage.get("$match"), dict):
+            match_filter = stage["$match"]
+            if not any(_is_sub_tenant_filter_key(k) for k in match_filter):
+                new_filter: Dict[str, Any] = {"sub_tenant_id": tenant_value}
+                new_filter.update(match_filter)
+                result = list(sub_pipeline)
+                result[i] = {"$match": new_filter}
+                return result
+            return list(sub_pipeline)  # already filtered
+    return [{"$match": {"sub_tenant_id": tenant_value}}] + list(sub_pipeline)
+
+
+def _inject_sub_tenant_to_payload(
+    op: str, payload: MongoPayload, tenant_value: str
+) -> MongoPayload:
+    """
+    For each $lookup stage in an aggregate pipeline that references a tenant-aware
+    collection, inject the sub_tenant_id filter into the $lookup sub-pipeline.
+
+    - Pipeline-form $lookup (has 'pipeline' key): inject into first $match or prepend.
+    - Simple-form $lookup (no 'pipeline'): convert to pipeline form that replicates the
+      equality join via $expr and adds the sub_tenant_id filter.
+
+    This complements the string-level guardrail in api.py which handles the starting
+    collection's own first $match.
+    """
+    if op != "aggregate" or not isinstance(payload, list):
+        return payload
+
+    result = []
+    for stage in payload:
+        if not isinstance(stage, dict) or not isinstance(stage.get("$lookup"), dict):
+            result.append(stage)
+            continue
+
+        lookup = dict(stage["$lookup"])
+        from_coll = lookup.get("from", "")
+
+        if from_coll not in _TENANT_AWARE_COLLECTIONS:
+            result.append(stage)
+            continue
+
+        # This $lookup joins a tenant-aware collection — ensure sub_tenant_id filter.
+        if isinstance(lookup.get("pipeline"), list):
+            lookup["pipeline"] = _inject_sub_tenant_into_lookup_pipeline(
+                lookup["pipeline"], tenant_value
+            )
+        else:
+            # Simple form: convert to pipeline form preserving the equality join.
+            local_field = lookup.get("localField", "")
+            foreign_field = lookup.get("foreignField", "")
+            as_field = lookup.get("as", "")
+            safe_local = re.sub(r"[^a-zA-Z0-9_]", "_", local_field) if local_field else "field"
+            var_name = f"lf_{safe_local}"
+            lookup = {
+                "from": from_coll,
+                "let": {var_name: f"${local_field}"},
+                "pipeline": [
+                    {
+                        "$match": {
+                            "$expr": {"$eq": [f"${foreign_field}", f"$${var_name}"]},
+                            "sub_tenant_id": tenant_value,
+                        }
+                    }
+                ],
+                "as": as_field,
+            }
+
+        result.append({"$lookup": lookup})
+
+    return result
 
 # ---------------------------
 # Runner
@@ -576,7 +682,8 @@ class LlmMongoRunner:
         raw_response: str,
         limit: int = 50,
         user_time_zone: Optional[str] = None,
-        remove_sub_tenant_match: bool = False
+        remove_sub_tenant_match: bool = False,
+        sub_tenant_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """
         Parses and executes an LLM-produced Mongo command string.
@@ -592,6 +699,8 @@ class LlmMongoRunner:
             payload = _rewrite_keys(payload)  # normalize field paths & convert Extended JSON
             if remove_sub_tenant_match:
                 payload = _strip_sub_tenant_match_from_payload(op, payload)
+            elif sub_tenant_id:
+                payload = _inject_sub_tenant_to_payload(op, payload, sub_tenant_id)
 
             # Print the final query before execution
             print("\n" + "=" * 60)
