@@ -676,6 +676,7 @@ class LlmMongoRunner:
             raise RuntimeError("MONGO_URI and mongo_db must be provided (or MONGO_DB set in .env)")
         self.client = MongoClient(resolved_mongo_uri)
         self.db = self.client[resolved_mongo_db]
+        self.last_executed_query: Optional[str] = None
 
     def run(
         self,
@@ -701,6 +702,21 @@ class LlmMongoRunner:
                 payload = _strip_sub_tenant_match_from_payload(op, payload)
             elif sub_tenant_id:
                 payload = _inject_sub_tenant_to_payload(op, payload, sub_tenant_id)
+
+            # Build and store the final query string before execution
+            if op == "aggregate":
+                self.last_executed_query = (
+                    f"db.{coll}.aggregate({json.dumps(payload, default=str)})"
+                )
+            elif op == "find":
+                if isinstance(payload, dict) and "filter" in payload:
+                    self.last_executed_query = (
+                        f"db.{coll}.find({json.dumps(payload['filter'], default=str)}"
+                        + (f", {json.dumps(payload['projection'], default=str)}" if payload.get("projection") else "")
+                        + ")"
+                    )
+                else:
+                    self.last_executed_query = f"db.{coll}.find({json.dumps(payload, default=str)})"
 
             # Print the final query before execution
             print("\n" + "=" * 60)

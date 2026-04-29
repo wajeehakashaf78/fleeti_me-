@@ -934,7 +934,7 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(defau
                             user_input=request.user_input,
                             refined_message=refined_message,
                             selected_collections=selected_collections,
-                            query=mongoagent_response,
+                            query=query_runner.last_executed_query or mongoagent_response,
                             query_response=results,
                             human_response=human_response
                         )
