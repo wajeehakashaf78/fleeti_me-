@@ -125,7 +125,7 @@
 
 ## asset_base
 
-**Description:** Contains fundamental identity and operational state information for each fleet asset. Includes asset_id, name, type (fleet vehicle, equipment), availability status (available, assigned, maintenance, retired), expiry date, device availability, category, sequence number, installation type, assigned devices/users, operational status (active, inactive, suspended), sub-tenant ID, and creation timestamps.
+**Description:** Contains fundamental identity and operational state information for each fleet asset. Includes asset_id, name, type (fleet vehicle, equipment), availability status (ONLY available, assigned, maintenance), expiry date, device availability, category, sequence number, installation type, assigned devices/users, operational status (active, inactive, suspended), sub-tenant ID, and creation timestamps.
 
 **Use for questions about:**
 - Asset identification
@@ -339,7 +339,7 @@
 - Speed and direction at any point in time
 - Ignition status (current and historical)
 - Odometer readings (current and historical)
-- Vehicle movement status (moving or stationary)
+- AvlRecord Vehicle movement status (moving or stationary)
 
 **Key Keywords:** location, GPS, tracking, position, coordinates, real-time location, live location, current location, historical location, location history, vehicle location, vehicle position, movement, speed, ignition, real-time tracking, GPS history, location tracking
 

@@ -148,18 +148,21 @@ class APIHandler:
             }
     
     async def fetch_trip_report(
-        self, 
-        asset_ids: str, 
-        start_date: str, 
-        end_date: str
+        self,
+        asset_ids: str,
+        start_date: str,
+        end_date: str,
+        time_zone: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Fetch Trip/Fleet Statistics Report"""
-        payload = {
+        payload: Dict[str, Any] = {
             "StartDate": start_date,
             "EndDate": end_date,
             "AssetIds": asset_ids,
-            "Type": "Trip"
+            "Type": "Trip",
         }
+        if time_zone:
+            payload["TimeZone"] = time_zone
         return await self.call_report_api("/fetch-dates", payload)
     
     async def fetch_fleet_summary(self, asset_ids: str, page: int = 1, size: int = 10) -> Dict[str, Any]:
@@ -234,12 +237,13 @@ class APIHandler:
         )
     
     async def fetch_generic_report(
-        self, 
+        self,
         report_type: str,
         asset_ids: Optional[str] = None,
         driver_ids: Optional[str] = None,
         start_date: Optional[str] = None,
-        end_date: Optional[str] = None
+        end_date: Optional[str] = None,
+        time_zone: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Fetch generic report using fetch-dates endpoint
@@ -269,7 +273,9 @@ class APIHandler:
             payload["StartDate"] = start_date
         if end_date:
             payload["EndDate"] = end_date
-        
+        if time_zone:
+            payload["TimeZone"] = time_zone
+
         return await self.call_report_api("/fetch-dates", payload)
 
 

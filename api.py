@@ -358,6 +358,71 @@ def _parse_user_utc_offset(user_time_zone: Optional[str]) -> timezone:
     return timezone(timedelta(hours=hours * sign, minutes=minutes * sign))
 
 
+_UTC_OFFSET_TO_IANA: Dict[int, str] = {
+    -720: "Etc/GMT+12",
+    -660: "Pacific/Midway",
+    -600: "Pacific/Honolulu",
+    -570: "Pacific/Marquesas",
+    -540: "America/Anchorage",
+    -480: "America/Los_Angeles",
+    -420: "America/Denver",
+    -360: "America/Chicago",
+    -300: "America/New_York",
+    -270: "America/Caracas",
+    -240: "America/Halifax",
+    -210: "America/St_Johns",
+    -180: "America/Sao_Paulo",
+    -120: "America/Noronha",
+     -60: "Atlantic/Azores",
+       0: "UTC",
+      60: "Europe/London",
+     120: "Europe/Paris",
+     180: "Asia/Riyadh",
+     210: "Asia/Tehran",
+     240: "Asia/Dubai",
+     270: "Asia/Kabul",
+     300: "Asia/Karachi",
+     330: "Asia/Kolkata",
+     345: "Asia/Kathmandu",
+     360: "Asia/Dhaka",
+     390: "Asia/Yangon",
+     420: "Asia/Bangkok",
+     480: "Asia/Singapore",
+     525: "Australia/Eucla",
+     540: "Asia/Tokyo",
+     570: "Australia/Darwin",
+     600: "Australia/Sydney",
+     630: "Pacific/Norfolk",
+     660: "Pacific/Noumea",
+     720: "Pacific/Auckland",
+     765: "Pacific/Chatham",
+     780: "Pacific/Apia",
+     840: "Pacific/Kiritimati",
+}
+
+
+def _offset_to_iana_timezone(user_time_zone: Optional[str]) -> Optional[str]:
+    """
+    Convert a UTC offset string (+5, +5:00, UTC+5:00, -03:30) to an IANA
+    timezone name (e.g. Asia/Karachi). Returns None when unparseable or unmapped.
+    """
+    if not user_time_zone:
+        return None
+    m = re.match(
+        r"^\s*(?:UTC\s*)?([+-])\s*(\d{1,2})(?::?\s*(\d{2}))?\s*$",
+        user_time_zone,
+        flags=re.IGNORECASE,
+    )
+    if not m:
+        return None
+    sign = 1 if m.group(1) == "+" else -1
+    hours = int(m.group(2))
+    minutes = int(m.group(3) or 0)
+    if hours > 14 or minutes > 59:
+        return None
+    return _UTC_OFFSET_TO_IANA.get(sign * (hours * 60 + minutes))
+
+
 def _has_explicit_time_component(value: str) -> bool:
     return bool(re.search(r"\d{2}:\d{2}(?::\d{2})?", value))
 
@@ -559,9 +624,13 @@ async def _process_report_request(
             user_time_zone
         )
 
+    iana_tz = _offset_to_iana_timezone(user_time_zone)
+
     if report_type == "Trip":
         if asset_ids and start_date and end_date:
-            result["api_response"] = await api_handler.fetch_trip_report(asset_ids, start_date, end_date)
+            result["api_response"] = await api_handler.fetch_trip_report(
+                asset_ids, start_date, end_date, time_zone=iana_tz
+            )
     elif report_type == "FleetSummary":
         if asset_ids:
             result["api_response"] = await api_handler.fetch_fleet_summary(asset_ids)
@@ -579,12 +648,14 @@ async def _process_report_request(
     elif report_type in ("DriverBehaviour", "DrivingBehaviour", "DriverBehavior"):
         if driver_ids and start_date and end_date:
             result["api_response"] = await api_handler.fetch_generic_report(
-                report_type, driver_ids=driver_ids, start_date=start_date, end_date=end_date
+                report_type, driver_ids=driver_ids, start_date=start_date, end_date=end_date,
+                time_zone=iana_tz,
             )
     else:
         if asset_ids and start_date and end_date:
             result["api_response"] = await api_handler.fetch_generic_report(
-                report_type, asset_ids=asset_ids, start_date=start_date, end_date=end_date
+                report_type, asset_ids=asset_ids, start_date=start_date, end_date=end_date,
+                time_zone=iana_tz,
             )
 
     result["api_response"] = _dedupe_report_api_response(result.get("api_response"))

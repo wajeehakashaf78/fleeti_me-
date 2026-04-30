@@ -169,6 +169,8 @@ You are allowed (and expected) to add missing context ONLY when ALL conditions b
 
 3) The carry-forward is unambiguous.
 
+4) In case the user does not mention a year with the date and there are no dates in the provided context, consider the year to be 2026 in the refined user question. 
+
 If any of these are not satisfied, DO NOT guess.
 
 ========================

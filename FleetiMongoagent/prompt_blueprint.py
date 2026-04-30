@@ -219,13 +219,14 @@ db.Asset.aggregate([
 {"$project": {"_id": 0,"plate_number": "$details.plate_number","plate_type": "$details.plate_type"}}
 ])
 
-Example 4: "Get the latest location for vehicle with plate 123 ABC"
+Example 4: "How many vehicles are moving right now?"
 Answer:
 db.Asset.aggregate([
-{"$match":{"sub_tenant_id":"sub_tenant_id","details.plate_number":{"$regex":"^123 ABC$","$options":"i"}}},
-{"$lookup":{"from":"AvlRecordLatest","localField":"_id","foreignField":"device_context.asset_id","as":"latest_locations"}},
-{"$unwind":"$latest_locations"},
-{"$project":{"_id":0,"plate_number":"$details.plate_number","location":"$latest_locations.location","timestamp":"$latest_locations.timestamp","speed":"$latest_locations.speed"}}
+  { $lookup: { from: "AvlRecordLatest", localField: "_id", foreignField: "device_context.asset_id", as: "latest_record" } },
+  { $unwind: "$latest_record" },
+  { $match: { "latest_record.speed": { $gt: 0 }, "latest_record.timestamp": { $gte: new Date(new Date().getTime() - (24 * 60 * 60 * 1000)) } } },
+  { $project: { _id: 0, asset_id: 1, name: 1, plate_number: "$details.plate_number", current_speed: "$latest_record.speed", location: "$latest_record.location", last_updated: "$latest_record.timestamp" } },
+  { $group: { _id: null, total_moving_count: { $sum: 1 }, moving_vehicles: { $push: "$$ROOT" } } }
 ])
 
 Example 5: "List all Idling events for plate 123 ABC yesterday"
