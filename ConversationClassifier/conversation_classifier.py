@@ -14,7 +14,7 @@ except Exception:
 
 
 class ConversationClassifier:
-    def __init__(self, model_name: str = "gpt-4o"):
+    def __init__(self, model_name: str = "gpt-5-mini"):
         """
         Initialize the conversation classifier using OpenAI Chat Completions.
         
@@ -334,9 +334,8 @@ response: <text or N/A>
         resp = self.client.chat.completions.create(
             model=self.model_name,
             messages=messages,
-            temperature=0.3,
-            top_p=0.9,
-            max_tokens=300
+            reasoning_effort="low",
+            max_completion_tokens=300
         )
         response = (resp.choices[0].message.content or "").strip() if getattr(resp, "choices", None) else ""
         

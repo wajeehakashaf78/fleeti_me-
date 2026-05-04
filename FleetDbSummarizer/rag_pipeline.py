@@ -95,7 +95,7 @@ class RAGPipeline:
         
         # LLM client (OpenAI)
         self.openai_client = None
-        self.openai_model_name = os.getenv("OPENAI_MODEL") or "gpt-4o"
+        self.openai_model_name = os.getenv("OPENAI_MODEL") or LLM_MODEL
         api_key = os.getenv("OPENAI_API_KEY")
         if not api_key:
             logger.warning("OPENAI_API_KEY not set. LLM generation will be disabled.")
@@ -366,9 +366,8 @@ Do not explain, do not add any other text. Just return the Python list."""
             resp = self.openai_client.chat.completions.create(
                 model=self.openai_model_name,
                 messages=messages,
-                temperature=float(LLM_TEMPERATURE) if LLM_TEMPERATURE is not None else 0.0,
-                max_tokens=int(LLM_MAX_TOKENS) if LLM_MAX_TOKENS is not None else 800,
-                top_p=0.9
+                reasoning_effort="low",
+                max_completion_tokens=int(LLM_MAX_TOKENS) if LLM_MAX_TOKENS is not None else 800,
             )
             response_text = (resp.choices[0].message.content or "").strip() if getattr(resp, "choices", None) else ""
             

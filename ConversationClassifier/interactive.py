@@ -11,7 +11,7 @@ def main():
     print("Conversation Classifier - Interactive Mode")
     print("=" * 60)
     print("\nInitializing OpenAI client...")
-    print("Using OPENAI_API_KEY and model from OPENAI_MODEL (default gpt-4o-mini).\n")
+    print("Using OPENAI_API_KEY and model from OPENAI_MODEL (default gpt-5-mini).\n")
     
     # Initialize classifier
     classifier = ConversationClassifier()

@@ -17,7 +17,7 @@ class LLMAgent:
     def __init__(self):
         """Initialize OpenAI client"""
         self.client = OpenAI(api_key=settings.OPENAI_API_KEY)
-        self.model = "gpt-4o"  # Using cost-effective model
+        self.model = settings.OPENAI_MODEL
     
     def process_user_input(
         self, 
@@ -67,7 +67,7 @@ class LLMAgent:
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
-                temperature=0.3,  # Low temperature for more consistent responses
+                reasoning_effort="low",
                 response_format={"type": "json_object"}  # Enforce JSON output
             )
             

@@ -23,7 +23,10 @@ from FleetDbSummarizer.rag_pipeline import RAGPipeline
 from FleetiMongoagent.prompt_blueprint import PROMPT as prompt_blueprint
 from FleetiMongoagent.run_all_models import orchistrator_main as mongoagent_orchistrator_main
 from FleetiQueryRunner.execute import LlmMongoRunner
-from FleetiResponse.respond import generate_llm_response as generate_human_response
+from FleetiResponse.respond import (
+    convert_query_response_times_for_user,
+    generate_llm_response as generate_human_response,
+)
 from jwt_utils import decode_jwt_no_verify, extract_db_and_sub_tenant
 
 # FleetiReports modules (integrated)
@@ -936,7 +939,7 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(defau
                     mongoagent_response = mongoagent_orchistrator_main(full_prompt)
 
                     print("\n" + "=" * 60)
-                    print("🤖 GPT-4o Raw Query:")
+                    print("🤖 OpenAI Raw Query:")
                     print(mongoagent_response)
                     print("=" * 60 + "\n")
 
@@ -994,8 +997,11 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(defau
                             sub_tenant_id=sub_tenant_id if not remove_sub_tenant_match else None,
                         )
                         
-                        # Convert results to string
-                        results_str = json.dumps(results, indent=2, default=str) if results else "[]"
+                        localized_results = convert_query_response_times_for_user(
+                            results,
+                            request.time_zone,
+                        )
+                        results_str = json.dumps(localized_results, indent=2, default=str) if localized_results else "[]"
                         
                         # Step 4: Generate human-friendly response
                         human_response = generate_human_response(request.user_input, refined_message, results_str)
@@ -1100,7 +1106,11 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(defau
 
                     if is_report_api_failure or is_empty_report_data or is_asset_or_driver_not_found:
                         report_results_payload = api_response_data if api_response_data is not None else mongodb_query_result
-                        report_results_str = json.dumps(report_results_payload, indent=2, default=str) if report_results_payload else "{}"
+                        localized_report_payload = convert_query_response_times_for_user(
+                            report_results_payload,
+                            request.time_zone,
+                        )
+                        report_results_str = json.dumps(localized_report_payload, indent=2, default=str) if localized_report_payload else "{}"
                         final_response = generate_human_response(
                             request.user_input,
                             refined_message,

@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     
     # OpenAI Configuration
     OPENAI_API_KEY: str
+    OPENAI_MODEL: str = "gpt-5-mini"
     
     # External API Configuration
     ACCESS_TOKEN: str = ""

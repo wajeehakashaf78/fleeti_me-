@@ -103,16 +103,15 @@ def run_ollama_model(prompt: str) -> Dict[str, Any]:
 
     try:
         client = OpenAI(api_key=api_key)
-        model_name = "gpt-4o"
+        model_name = os.getenv("MONGOAGENT_OPENAI_MODEL", "gpt-5.4-mini")
 
         resp = client.chat.completions.create(
             model=model_name,
             messages=[
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.1,
-            top_p=0.9,
-            max_tokens=800
+            reasoning_effort="low",
+            max_completion_tokens=800
         )
 
         response_text = (resp.choices[0].message.content or "").strip() if resp.choices else ""
