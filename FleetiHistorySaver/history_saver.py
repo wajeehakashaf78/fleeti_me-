@@ -5,6 +5,7 @@ Saves and loads conversation history from MongoDB collection FleetiMessages
 
 import os
 import json
+import logging
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timezone
 from dotenv import load_dotenv
@@ -13,6 +14,7 @@ from bson import ObjectId
 
 # Load environment variables
 load_dotenv()
+logger = logging.getLogger(__name__)
 
 
 class FleetiHistorySaver:
@@ -54,7 +56,7 @@ class FleetiHistorySaver:
         """Create collection if it doesn't exist."""
         if self.collection_name not in self.db.list_collection_names():
             self.db.create_collection(self.collection_name)
-            print(f"Created collection: {self.collection_name}")
+            logger.debug("Created collection: %s", self.collection_name)
 
     def _compact_assistant_for_history(self, assistant_value: Any) -> str:
         """
@@ -85,10 +87,18 @@ class FleetiHistorySaver:
             List of conversation history entries
         """
         session_doc = self.db[self.collection_name].find_one({"sessionId": self.session_id})
-        
+        return self.build_classifier_history_from_session_doc(session_doc)
+
+    def build_classifier_history_from_session_doc(
+        self,
+        session_doc: Optional[Dict[str, Any]],
+    ) -> List[Dict[str, str]]:
+        """
+        Convert a session document to ConversationClassifier history format.
+        """
         if not session_doc:
             return []
-        
+
         # Convert MongoDB messages to ConversationClassifier format
         history = []
         messages = session_doc.get("messages", [])
@@ -112,7 +122,7 @@ class FleetiHistorySaver:
         user_input: str,
         refined_message: str,
         llm_response: str
-    ):
+    ) -> Dict[str, Any]:
         """
         Save a general conversation message to MongoDB.
         
@@ -130,6 +140,7 @@ class FleetiHistorySaver:
         }
         
         self._append_message(message)
+        return message
     
     def save_fleet_message(
         self,
@@ -139,7 +150,7 @@ class FleetiHistorySaver:
         query: str,
         query_response: List[Dict[str, Any]],
         human_response: str
-    ):
+    ) -> Dict[str, Any]:
         """
         Save a fleet-related question and response to MongoDB.
         
@@ -163,6 +174,7 @@ class FleetiHistorySaver:
         }
         
         self._append_message(message)
+        return message
 
     def save_static_message(self, message: str) -> str:
         """
@@ -183,7 +195,7 @@ class FleetiHistorySaver:
             ]
         }
         self.db[self.collection_name].insert_one(doc)
-        print(f"Created new session document for sessionId: {str(new_id)} with sub_tenant_id: {self.sub_tenant_id}")
+        logger.debug("Created new session document for sessionId: %s with sub_tenant_id: %s", str(new_id), self.sub_tenant_id)
         return str(new_id)
     
     def _append_message(self, message: Dict[str, Any]):
@@ -210,9 +222,9 @@ class FleetiHistorySaver:
         )
         
         if result.upserted_id:
-            print(f"Created new session document for sessionId: {self.session_id} with sub_tenant_id: {self.sub_tenant_id}")
+            logger.debug("Created new session document for sessionId: %s with sub_tenant_id: %s", self.session_id, self.sub_tenant_id)
         else:
-            print(f"Appended message to existing session: {self.session_id}")
+            logger.info("Appended message to existing session: %s", self.session_id)
     
     def get_session_document(self) -> Optional[Dict[str, Any]]:
         """
@@ -229,5 +241,5 @@ class FleetiHistorySaver:
             {"sessionId": self.session_id},
             {"$set": {"messages": []}}
         )
-        print(f"Cleared messages for session: {self.session_id}")
+        logger.debug("Cleared messages for session: %s", self.session_id)
 

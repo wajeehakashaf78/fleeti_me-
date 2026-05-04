@@ -4,11 +4,14 @@ Handles OpenAI API interactions
 """
 
 import json
+import logging
 from typing import List, Dict, Optional
 from openai import OpenAI
 from .config import settings
 from .prompts import get_system_prompt
 from .models import LLMResponse
+
+logger = logging.getLogger(__name__)
 
 
 class LLMAgent:
@@ -84,7 +87,7 @@ class LLMAgent:
             
         except json.JSONDecodeError as e:
             # If JSON parsing fails, return invalid response
-            print(f"JSON parsing error: {e}")
+            logger.debug("JSON parsing error: %s", e)
             return LLMResponse(
                 type="invalid",
                 message="Failed to parse LLM response. Please try again."
@@ -92,7 +95,7 @@ class LLMAgent:
         
         except Exception as e:
             # Handle any other errors
-            print(f"LLM processing error: {e}")
+            logger.debug("LLM processing error: %s", e)
             return LLMResponse(
                 type="invalid",
                 message=f"An error occurred while processing your request: {str(e)}"

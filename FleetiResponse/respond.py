@@ -1,6 +1,7 @@
 import os
 import re
 import json
+import logging
 from datetime import datetime, timezone, timedelta
 from typing import Any, Optional
 
@@ -11,6 +12,7 @@ from openai import OpenAI
 # Load API key from .env
 load_dotenv()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+logger = logging.getLogger(__name__)
 
 
 _TEMPORAL_KEY_PARTS = (
@@ -261,7 +263,7 @@ Now write your final answer to the user in the required language.
 """
 
     messages = [
-        {"role": "system", "content": "You are a helpful assistant that explains database results in the user's language."},
+        {"role": "system", "content": "You are a helpful assistant that explains database results in the user's language and does not expose any database IDs in its response."},
         {"role": "user", "content": prompt}
     ]
 
@@ -276,7 +278,12 @@ Now write your final answer to the user in the required language.
         content = _choice_text(response)
         if content:
             return content
-        print(f"[HumanResponseLLM] Empty response from {model_name}; {_response_debug_summary(response)}; max_completion_tokens={token_budget}")
+        logger.debug(
+            "[HumanResponseLLM] Empty response from %s; %s; max_completion_tokens=%s",
+            model_name,
+            _response_debug_summary(response),
+            token_budget,
+        )
 
     return _fallback_human_response(db_response)
 

@@ -11,10 +11,17 @@ This script:
 import json
 import sys
 import gc
+import logging
 from pathlib import Path
 from typing import Dict, Any
 from datetime import datetime
 import os
+
+logger = logging.getLogger(__name__)
+
+
+def print(*args: Any, **kwargs: Any) -> None:
+    logger.debug(" ".join(str(arg) for arg in args))
 
 # Optionally load environment variables from a .env file if available
 try:

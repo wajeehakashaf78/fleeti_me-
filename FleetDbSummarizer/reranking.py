@@ -65,7 +65,7 @@ class CrossEncoderReranker:
         pairs = [[query, chunk] for chunk in candidate_chunks]
         
         # Get relevance scores from Cross-Encoder
-        scores = self.reranker.predict(pairs)
+        scores = self.reranker.predict(pairs, show_progress_bar=False)
         
         # Create list of (index, score) tuples
         ranked_results = [(i, float(score)) for i, score in enumerate(scores)]

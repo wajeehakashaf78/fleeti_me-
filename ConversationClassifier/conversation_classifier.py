@@ -5,12 +5,15 @@ and refines user questions based on conversation history.
 """
 
 import os
+import logging
 from typing import List, Tuple, Dict
 from dotenv import load_dotenv
 try:
     from openai import OpenAI  # type: ignore
 except Exception:
     OpenAI = None
+
+logger = logging.getLogger(__name__)
 
 
 class ConversationClassifier:
@@ -25,13 +28,13 @@ class ConversationClassifier:
         load_dotenv()
         api_key = os.getenv("OPENAI_API_KEY")
         if not api_key or OpenAI is None:
-            print("WARNING: OpenAI not available or OPENAI_API_KEY missing. Classification will not run.")
+            logger.debug("OpenAI not available or OPENAI_API_KEY missing. Classification will not run.")
             self.client = None
         else:
             try:
                 self.client = OpenAI(api_key=api_key)
             except Exception as e:
-                print(f"Failed to initialize OpenAI client: {e}")
+                logger.debug("Failed to initialize OpenAI client: %s", e)
                 self.client = None
         
         # Allow overriding model via env

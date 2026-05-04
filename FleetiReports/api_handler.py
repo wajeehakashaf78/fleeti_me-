@@ -5,8 +5,15 @@ Handles external API calls to fetch reports
 
 from typing import Dict, Any, Optional
 from datetime import datetime
+import logging
 import httpx
 from .config import settings
+
+logger = logging.getLogger(__name__)
+
+
+def print(*args: Any, **kwargs: Any) -> None:
+    logger.debug(" ".join(str(arg) for arg in args))
 
 
 class APIHandler:

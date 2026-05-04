@@ -4,11 +4,18 @@ Executes MongoDB queries to fetch asset and driver information
 """
 
 from typing import List, Dict, Any
+import logging
 import re
 from pymongo import MongoClient
 from pymongo.errors import PyMongoError
 from .config import settings
 from .models import AssetInfo, DriverInfo
+
+logger = logging.getLogger(__name__)
+
+
+def print(*args: Any, **kwargs: Any) -> None:
+    logger.debug(" ".join(str(arg) for arg in args))
 
 
 class MongoDBHandler:

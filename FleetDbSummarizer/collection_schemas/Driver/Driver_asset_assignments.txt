@@ -2,7 +2,6 @@ Collection: Driver
 Fields:
 - asset_assignments: array<object>
 - asset_assignments[]._id: uuid (unique asset identifier)
-- asset_assignments[].asset_name: string
 - asset_assignments[].asset_type: string
 - asset_assignments[].asset_category: string
 - asset_assignments[].priority_type: int

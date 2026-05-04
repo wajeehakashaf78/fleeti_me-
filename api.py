@@ -10,11 +10,132 @@ import os
 import json
 import ast
 import re
+import logging
+import copy
+import time
 from typing import Optional, Dict, Any, List, Tuple
 from datetime import datetime, timezone, timedelta
 from urllib.parse import urlparse
 from dotenv import load_dotenv
 from dateutil import parser as dtparser
+
+
+class _MessagePrefixFilter(logging.Filter):
+    def __init__(self, *prefixes: str):
+        super().__init__()
+        self.prefixes = prefixes
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        message = record.getMessage()
+        return any(message.startswith(prefix) for prefix in self.prefixes)
+
+
+def _configure_api_logging() -> None:
+    logging.basicConfig(level=logging.INFO)
+
+    logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+    logging.getLogger("openai").setLevel(logging.WARNING)
+    logging.getLogger("sentence_transformers").setLevel(logging.WARNING)
+    logging.getLogger("chromadb").setLevel(logging.CRITICAL)
+    logging.getLogger("chromadb.telemetry").setLevel(logging.CRITICAL)
+
+    httpx_logger = logging.getLogger("httpx")
+    httpx_logger.setLevel(logging.INFO)
+    httpx_logger.addFilter(_MessagePrefixFilter("HTTP Request: POST https://api.openai.com/v1/chat/completions"))
+
+    rag_logger = logging.getLogger("FleetDbSummarizer.rag_pipeline")
+    rag_logger.setLevel(logging.INFO)
+    rag_logger.addFilter(_MessagePrefixFilter("Re-ranked to "))
+
+    utils_logger = logging.getLogger("FleetDbSummarizer.utils")
+    utils_logger.setLevel(logging.INFO)
+    utils_logger.addFilter(_MessagePrefixFilter("Loaded schemas for "))
+
+    query_logger = logging.getLogger("FleetiQueryRunner.execute")
+    query_logger.setLevel(logging.INFO)
+    query_logger.addFilter(_MessagePrefixFilter("📋 Executing MongoDB Query:"))
+
+    history_logger = logging.getLogger("FleetiHistorySaver.history_saver")
+    history_logger.setLevel(logging.INFO)
+    history_logger.addFilter(_MessagePrefixFilter("Appended message to existing session:"))
+
+    for name in (
+        "FleetDbSummarizer.retrieval",
+        "FleetDbSummarizer.reranking",
+        "FleetDbSummarizer.data_preparation",
+        "FleetiMongoagent.run_all_models",
+        "FleetiReports.api_handler",
+        "FleetiReports.mongo_handler",
+        "FleetiReports.llm_agent",
+        "ConversationClassifier.conversation_classifier",
+        "FleetiResponse.respond",
+    ):
+        logging.getLogger(name).setLevel(logging.WARNING)
+
+
+_configure_api_logging()
+logger = logging.getLogger(__name__)
+
+SESSION_HISTORY_CACHE_TTL_SECONDS = int(os.getenv("SESSION_HISTORY_CACHE_TTL_SECONDS", "60"))
+_SessionCacheKey = Tuple[str, str, str]
+_SESSION_HISTORY_CACHE: Dict[_SessionCacheKey, Dict[str, Any]] = {}
+
+
+def _session_cache_key(mongo_db: str, sub_tenant_id: Optional[str], session_id: str) -> _SessionCacheKey:
+    return (mongo_db, sub_tenant_id or "", session_id)
+
+
+def _prune_expired_session_cache(now: Optional[float] = None) -> None:
+    current = now if now is not None else time.monotonic()
+    expired_keys = [
+        key for key, entry in _SESSION_HISTORY_CACHE.items()
+        if float(entry.get("expires_at", 0)) <= current
+    ]
+    for key in expired_keys:
+        _SESSION_HISTORY_CACHE.pop(key, None)
+
+
+def _get_cached_session_document(
+    history_saver: Any,
+    cache_key: _SessionCacheKey,
+) -> Optional[Dict[str, Any]]:
+    now = time.monotonic()
+    _prune_expired_session_cache(now)
+
+    cached = _SESSION_HISTORY_CACHE.get(cache_key)
+    if cached is not None:
+        cached["expires_at"] = now + SESSION_HISTORY_CACHE_TTL_SECONDS
+        return copy.deepcopy(cached.get("session_doc"))
+
+    session_doc = history_saver.get_session_document()
+    _SESSION_HISTORY_CACHE[cache_key] = {
+        "session_doc": copy.deepcopy(session_doc),
+        "expires_at": now + SESSION_HISTORY_CACHE_TTL_SECONDS,
+    }
+    return session_doc
+
+
+def _append_message_to_session_cache(
+    cache_key: _SessionCacheKey,
+    message: Dict[str, Any],
+) -> None:
+    now = time.monotonic()
+    cached = _SESSION_HISTORY_CACHE.get(cache_key)
+    if cached is None or cached.get("session_doc") is None:
+        mongo_db, sub_tenant_id, session_id = cache_key
+        cached = {
+            "session_doc": {
+                "sessionId": session_id,
+                "sub_tenant_id": sub_tenant_id,
+                "messages": [],
+            },
+            "expires_at": now + SESSION_HISTORY_CACHE_TTL_SECONDS,
+        }
+        _SESSION_HISTORY_CACHE[cache_key] = cached
+
+    cached["expires_at"] = now + SESSION_HISTORY_CACHE_TTL_SECONDS
+    cached["session_doc"].setdefault("messages", []).append(copy.deepcopy(message))
 
 # Import all the components from main.py
 from ConversationClassifier.conversation_classifier import ConversationClassifier
@@ -760,12 +881,24 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(defau
             sub_tenant_id=sub_tenant_id or "",
             mongo_db=mongo_db,
         )
+        session_cache_key = _session_cache_key(mongo_db, sub_tenant_id, request.session_id)
+        session_doc = _get_cached_session_document(history_saver, session_cache_key)
+
+        def save_general_message_to_history(**kwargs: Any) -> Dict[str, Any]:
+            saved_message = history_saver.save_general_message(**kwargs)
+            _append_message_to_session_cache(session_cache_key, saved_message)
+            return saved_message
+
+        def save_fleet_message_to_history(**kwargs: Any) -> Dict[str, Any]:
+            saved_message = history_saver.save_fleet_message(**kwargs)
+            _append_message_to_session_cache(session_cache_key, saved_message)
+            return saved_message
 
         # Load existing conversation history (excludes static message).
         # Always set classifier history to this session's history; for a new session
         # this must be [] so we don't leak history from other sessions (e.g. wrong
         # plate numbers from a previous chat).
-        existing_history = history_saver.load_session_history()
+        existing_history = history_saver.build_classifier_history_from_session_doc(session_doc)
         classifier.conversation_history = existing_history[-8:] if existing_history else []
 
         # Process message through classifier
@@ -779,7 +912,7 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(defau
             # (it defaults to a greeting if none is provided)
             if llm_response:
                 # Save general message to history
-                history_saver.save_general_message(
+                save_general_message_to_history(
                     user_input=request.user_input,
                     refined_message=refined_message,
                     llm_response=llm_response
@@ -792,7 +925,7 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(defau
             else:
                 # Fallback: if somehow no response was generated, use default
                 default_response = "Helloooo, I am your fleet assistant. How can I help you today?"
-                history_saver.save_general_message(
+                save_general_message_to_history(
                     user_input=request.user_input,
                     refined_message=refined_message,
                     llm_response=default_response
@@ -808,7 +941,6 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(defau
             base_api_url = _build_reports_base_url(request.base_url)
             reports_api_handler = APIHandler(base_url=base_api_url, access_token=authorization)
 
-            session_doc = history_saver.get_session_document()
             reports_history = _build_reports_conversation_history(session_doc)
             report_llm_response = llm_agent.process_user_input(refined_message, reports_history)
 
@@ -850,16 +982,18 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(defau
                             "Please provide the asset plate number(s) or group name(s) for the Fleet Summary Report."
                         )
 
-            print("\n--- Report LLM Response ---")
             if report_llm_response:
                 try:
-                    print(json.dumps(report_llm_response.model_dump(), indent=2, default=str))
+                    logger.debug("Report LLM Response: %s", json.dumps(report_llm_response.model_dump(), default=str))
                 except Exception:
-                    print(f"type: {getattr(report_llm_response, 'type', None)}")
-                    print(f"pre_req: {getattr(report_llm_response, 'pre_req', None)}")
-                    print(f"message: {getattr(report_llm_response, 'message', None)}")
+                    logger.debug(
+                        "Report LLM Response: type=%s pre_req=%s message=%s",
+                        getattr(report_llm_response, "type", None),
+                        getattr(report_llm_response, "pre_req", None),
+                        getattr(report_llm_response, "message", None),
+                    )
             else:
-                print("None")
+                logger.debug("Report LLM Response: None")
 
             response_type = report_llm_response.type if report_llm_response else "invalid"
             response_message = report_llm_response.message if report_llm_response else ""
@@ -873,7 +1007,7 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(defau
                     final_response = response_message
                     
                     # Save FleetiReports response as fleet message
-                    history_saver.save_fleet_message(
+                    save_fleet_message_to_history(
                         user_input=request.user_input,
                         refined_message=refined_message,
                         selected_collections=[],
@@ -938,10 +1072,7 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(defau
                     )
                     mongoagent_response = mongoagent_orchistrator_main(full_prompt)
 
-                    print("\n" + "=" * 60)
-                    print("🤖 OpenAI Raw Query:")
-                    print(mongoagent_response)
-                    print("=" * 60 + "\n")
+                    logger.debug("OpenAI Raw Query: %s", mongoagent_response)
 
                     if not mongoagent_response:
                         return ChatResponse(
@@ -975,8 +1106,8 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(defau
                             sub_tenant_id,
                         )
                         if guard_error:
-                            print(f"[SubTenantGuard] Rejected — {guard_error}")
-                            print(f"[SubTenantGuard] Query: {mongoagent_response[:500]}")
+                            logger.debug("[SubTenantGuard] Rejected: %s", guard_error)
+                            logger.debug("[SubTenantGuard] Query: %s", mongoagent_response[:500])
                             return ChatResponse(
                                 human_response=_user_friendly_failure_message(),
                                 error=False
@@ -1007,7 +1138,7 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(defau
                         human_response = generate_human_response(request.user_input, refined_message, results_str)
                         
                         # Save fleet message to history
-                        history_saver.save_fleet_message(
+                        save_fleet_message_to_history(
                             user_input=request.user_input,
                             refined_message=refined_message,
                             selected_collections=selected_collections,
@@ -1027,7 +1158,7 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(defau
                     
                     except Exception as query_error:
                         # Log technical error server-side only.
-                        print(f"[QueryRunnerError] {str(query_error)}")
+                        logger.debug("[QueryRunnerError] %s", str(query_error))
                         return ChatResponse(
                             human_response=_user_friendly_failure_message(),
                             error=False
@@ -1040,7 +1171,7 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(defau
                     final_response = response_message
 
                     # Save FleetiReports response as fleet message
-                    history_saver.save_fleet_message(
+                    save_fleet_message_to_history(
                         user_input=request.user_input,
                         refined_message=refined_message,
                         selected_collections=[],
@@ -1127,7 +1258,7 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(defau
                             final_response["end_datetime"] = report_end_datetime
 
                     # Save FleetiReports response as fleet message
-                    history_saver.save_fleet_message(
+                    save_fleet_message_to_history(
                         user_input=request.user_input,
                         refined_message=refined_message,
                         selected_collections=[],
@@ -1150,7 +1281,7 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(defau
     
     except Exception as e:
         # Log technical error server-side only.
-        print(f"[UnhandledChatError] {str(e)}")
+        logger.debug("[UnhandledChatError] %s", str(e))
         # Catch-all error handler
         return ChatResponse(
             human_response=_user_friendly_failure_message(),

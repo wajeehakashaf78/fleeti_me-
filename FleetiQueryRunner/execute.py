@@ -2,6 +2,7 @@
 import os
 import re
 import json
+import logging
 from typing import Any, Dict, List, Tuple, Union, Iterable, Optional
 
 from dotenv import load_dotenv
@@ -21,6 +22,11 @@ except ImportError:
     yaml = None
 
 MongoPayload = Union[List[Dict[str, Any]], Dict[str, Any]]
+logger = logging.getLogger(__name__)
+
+
+def print(*args: Any, **kwargs: Any) -> None:
+    logger.debug(" ".join(str(arg) for arg in args))
 
 # Collections that carry sub_tenant_id directly on their documents.
 # Must match the same set defined in api.py.
@@ -717,6 +723,23 @@ class LlmMongoRunner:
                     )
                 else:
                     self.last_executed_query = f"db.{coll}.find({json.dumps(payload, default=str)})"
+
+            query_log_lines = [
+                "📋 Executing MongoDB Query:",
+                f"Collection: {coll}",
+                f"Operation: {op}",
+            ]
+            if op == "aggregate":
+                query_log_lines.append(f"Pipeline: {json.dumps(payload, indent=2, default=str)}")
+            elif op == "find":
+                if isinstance(payload, dict) and "filter" in payload:
+                    query_log_lines.append(f"Filter: {json.dumps(payload.get('filter', {}), indent=2, default=str)}")
+                    if payload.get("projection"):
+                        query_log_lines.append(f"Projection: {json.dumps(payload.get('projection', {}), indent=2, default=str)}")
+                else:
+                    query_log_lines.append(f"Filter: {json.dumps(payload, indent=2, default=str)}")
+            query_log_lines.append(f"Limit: {limit}")
+            logger.info("\n".join(query_log_lines))
 
             # Print the final query before execution
             print("\n" + "=" * 60)
