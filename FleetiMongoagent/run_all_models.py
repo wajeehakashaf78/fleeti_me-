@@ -201,9 +201,10 @@ def main():
     # Output directory
     output_dir = "output"
     
-    # Get next file number
-    file_number = get_next_file_number(output_dir)
-    print(f"\n📁 Output file will be: {output_dir}/{file_number}.json")
+    # File output disabled: do not save FleetiMongoagent/output files.
+    # file_number = get_next_file_number(output_dir)
+    file_number = None
+    print("\n📁 Output file saving is disabled.")
     
     # Prepare results dictionary
     results = {
@@ -233,7 +234,8 @@ def main():
     print("\n" + "=" * 60)
     print("Saving Results")
     print("=" * 60)
-    save_results(output_dir, results, file_number)
+    # File output disabled: do not save FleetiMongoagent/output files.
+    # save_results(output_dir, results, file_number)
     
     # Print summary
     print("\n" + "=" * 60)
@@ -243,7 +245,7 @@ def main():
         print(f"✅ Success: Query generated successfully")
     else:
         print(f"❌ Error: {ollama_result.get('error', 'Unknown error')}")
-    print(f"📄 Output file: {output_dir}/{file_number}.json")
+    print("📄 Output file: disabled")
     print("=" * 60)
 
 
@@ -256,9 +258,10 @@ def orchistrator_main(full_prompt):
     # Output directory
     output_dir = "FleetiMongoagent/output"
     
-    # Get next file number
-    file_number = get_next_file_number(output_dir)
-    print(f"\n📁 Output file will be: {output_dir}/{file_number}.json")
+    # File output disabled: do not save FleetiMongoagent/output files.
+    # file_number = get_next_file_number(output_dir)
+    file_number = None
+    print("\n📁 Output file saving is disabled.")
     
     # Prepare results dictionary
     results = {
@@ -288,7 +291,8 @@ def orchistrator_main(full_prompt):
     print("\n" + "=" * 60)
     print("Saving Results")
     print("=" * 60)
-    save_results(output_dir, results, file_number)
+    # File output disabled: do not save FleetiMongoagent/output files.
+    # save_results(output_dir, results, file_number)
     
     # Print summary
     print("\n" + "=" * 60)
@@ -298,7 +302,7 @@ def orchistrator_main(full_prompt):
         print(f"✅ Success: Query generated successfully")
     else:
         print(f"❌ Error: {ollama_result.get('error', 'Unknown error')}")
-    print(f"📄 Output file: {output_dir}/{file_number}.json")
+    print("📄 Output file: disabled")
     print("=" * 60)
 
     return ollama_result.get('query')

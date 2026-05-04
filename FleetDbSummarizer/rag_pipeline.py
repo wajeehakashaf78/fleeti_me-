@@ -463,8 +463,8 @@ Do not explain, do not add any other text. Just return the Python list."""
                 )
                 result['collection_json'] = collection_json
                 
-                # Save JSON to file (DISABLED for performance)
-                json_file_path = self.save_collection_json(query, collection_json)
+                # File output disabled: do not save FleetDbSummarizer/output_json files.
+                # json_file_path = self.save_collection_json(query, collection_json)
                 result['json_file_path'] = None
             except Exception as e:
                 logger.error(f"Error building collection JSON: {e}")
