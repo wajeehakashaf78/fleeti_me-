@@ -221,6 +221,7 @@ db.Asset.aggregate([
 
 Example 4: "How many vehicles are moving right now?"
 Answer:
+// do not handle dates like strings 
 db.Asset.aggregate([
   { $lookup: { from: "AvlRecordLatest", localField: "_id", foreignField: "device_context.asset_id", as: "latest_record" } },
   { $unwind: "$latest_record" },
