@@ -208,6 +208,39 @@ def _fallback_human_response(db_response: str) -> str:
     return " ".join(parts)
 
 
+def _contains_arabic(text: str) -> bool:
+    return bool(re.search(r"[\u0600-\u06FF]", text or ""))
+
+
+def _sanitize_human_response(text: str, user_input: str) -> str:
+    """
+    Remove unsupported capability offers that the response LLM may append.
+    The final answer should only explain the database result.
+    """
+    if not text:
+        return text
+
+    cleaned = text.strip()
+    cleaned = re.sub(
+        r"(?:\n{0,2}|^)"
+        r"(?:If you want|If you'd like|I can|Would you like me to|Do you want me to)"
+        r"[^.\n]*(?:export|csv|download|sort|filter|create|generate)[^.\n]*(?:\.|\n|$)",
+        "",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+
+    closing = (
+        "أخبرني إذا كنت تحتاج إلى أي شيء آخر."
+        if _contains_arabic(user_input)
+        else "Let me know if you need anything else."
+    )
+    if closing not in cleaned:
+        cleaned = f"{cleaned}\n\n{closing}" if cleaned else closing
+    return cleaned
+
+
 def generate_llm_response(user_input: str, refined_input: str, db_response: str) -> str:
     """
     Generate a natural language answer for the user based on their question,
@@ -237,7 +270,11 @@ Your task:
 - Keep it short (2-5 sentences) and conversational.
 - If there are coordinates in the database response, make a google maps link for the location. Google maps link should be clickable on the FE by the customer. For example: [Google Maps](https://www.google.com/maps?q=21.5854966,39.209455).
 - Do not make up random reasons for errors, if the reason is obvious in the data provided to you. Just tell the user that you ran into a problem and starting a new conversation might help.
-- Your task is to just translate the database query results based on the user question, do not add any extra fallbacks in the response.
+- Your task is to only translate the database query results into natural language based on the user question.
+- Do not add follow-up offers, extra actions, extra fallbacks, or unsupported capabilities.
+- Do not say you can sort, filter, export, download, create a CSV, generate a file, or perform any action that is not already done in the database response.
+- Do not end with "If you want...", "If you'd like...", "I can...", "Would you like me to...", or similar offer language.
+- End with only this simple closing after the answer: "Let me know if you need anything else." For Arabic answers, use the Arabic equivalent.
 - IMPORTANT LANGUAGE RULE:
   - If the user's original question is in Arabic, the final answer must be in Arabic.
   - Otherwise, answer in English.
@@ -278,7 +315,7 @@ Now write your final answer to the user in the required language.
         )
         content = _choice_text(response)
         if content:
-            return content
+            return _sanitize_human_response(content, user_input)
         logger.debug(
             "[HumanResponseLLM] Empty response from %s; %s; max_completion_tokens=%s",
             model_name,
@@ -286,7 +323,7 @@ Now write your final answer to the user in the required language.
             token_budget,
         )
 
-    return _fallback_human_response(db_response)
+    return _sanitize_human_response(_fallback_human_response(db_response), user_input)
 
 
 if __name__ == "__main__":
