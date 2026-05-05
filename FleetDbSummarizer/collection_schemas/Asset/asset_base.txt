@@ -1,7 +1,6 @@
 Collection: Asset
 Fields:
 - _id: uuid
-- asset_id: string (unique identifier, indexed)
 - type: string
 - availability: string
 - device_availability: string

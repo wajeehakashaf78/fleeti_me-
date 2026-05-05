@@ -152,6 +152,29 @@ def _sanitize_refined_message(
     return cleaned.strip(" ;,") or refined_message
 
 
+def _ensure_refined_message(refined_message: str, user_message: str, classification: str) -> str:
+    """
+    Fleet/report requests must always have a usable refined question.
+    If the classifier omits it, keep the user's original message unchanged.
+    """
+    cleaned = (refined_message or "").strip()
+    if classification not in {"fleet", "report"}:
+        return cleaned
+
+    if not cleaned or cleaned.upper() == "N/A":
+        return user_message.strip()
+
+    lower_cleaned = cleaned.lower()
+    if (
+        lower_cleaned.startswith("classification:")
+        or lower_cleaned.startswith("response:")
+        or "refined message:" in lower_cleaned
+    ):
+        return user_message.strip()
+
+    return cleaned
+
+
 class ConversationClassifier:
     def __init__(self, model_name: str = "gpt-5-mini"):
         """
@@ -431,6 +454,8 @@ Output exactly one label, following the classification decision order above:
 
 2) REFINED MESSAGE:
 - If fleet or report: produce the most context-complete refined query possible.
+- If fleet or report and no refinement is needed: return the current user message exactly as the refined message.
+- If fleet or report: never leave refined message blank and never return N/A as the refined message.
 - If general conversation: produce an English refined message that preserves the user intent.
 
 3) RESPONSE:
@@ -592,6 +617,12 @@ response: <text or N/A>
         elif _looks_like_fleet_data_request(user_message, refined_message):
             classification = "fleet"
             llm_response = ""
+
+        refined_message = _ensure_refined_message(
+            refined_message,
+            user_message,
+            classification,
+        )
         
         # Update conversation history
         # For fleet queries, use "LLM RESPONSE", for general conversation use the actual response
