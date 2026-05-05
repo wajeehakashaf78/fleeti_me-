@@ -30,6 +30,55 @@ _REPORT_INTENT_RE = re.compile(
     flags=re.IGNORECASE,
 )
 
+_GENERAL_OVERRIDE_RE = re.compile(
+    r"\b("
+    r"_id|uid|primary\s+key|internal\s+id|database\s+id|"
+    r"create|update|delete|insert|modify|remove|change|edit"
+    r")\b",
+    flags=re.IGNORECASE,
+)
+
+_FLEET_SCHEMA_INTENT_RE = re.compile(
+    r"\b("
+    r"asset|assets|vehicle|vehicles|plate|plate\s+number|fleet\s+type|vehicle\s+type|"
+    r"expiry|expi+ry|expires|expi+res|expiring|expi+ring|expired|expi+red|"
+    r"expiration|expiry\s+date|expi+ry\s+date|insurance\s+expiry|insurance\s+expi+ry|warranty|"
+    r"istimara|mvpi|operation\s+card|barrier\s+certificate|document\s+status|"
+    r"driver|drivers|license|licence|visa|medical\s+certificate|assignment|assigned|"
+    r"device|devices|imei|serial\s+number|installation|warranty\s+expiry|"
+    r"location|latitude|longitude|coordinates|gps|speed|ignition|movement|odometer|"
+    r"fuel|sensor|temperature|humidity|weight|voltage|satellites|"
+    r"trip|trips|route|history|distance|duration|idle|idling|stop|"
+    r"alert|alerts|event|events|geofence|system\s+rule|alert\s+rule|"
+    r"status|availability|maintenance|service|tyre|tire|"
+    r"analytics|safety\s+score|behavior\s+score|behaviour\s+score|utilization"
+    r")\b",
+    flags=re.IGNORECASE,
+)
+
+_FLEET_LOOKUP_ACTION_RE = re.compile(
+    r"\b("
+    r"list|show|get|give|retrieve|fetch|find|search|lookup|check|count|compare|"
+    r"filter|summari[sz]e|which|who|where|when|current|latest|last|nearest|"
+    r"assigned|installed|expiring|expi+ring|expired|expi+red|expires|expi+res"
+    r")\b",
+    flags=re.IGNORECASE,
+)
+
+_FLEET_UNAMBIGUOUS_DATA_RE = re.compile(
+    r"\b("
+    r"plate|plate\s+number|imei|vin|chassis|engine\s+number|serial\s+number|"
+    r"expiry|expi+ry|expires|expi+res|expiring|expi+ring|expired|expi+red|expiration|"
+    r"insurance|warranty|istimara|mvpi|operation\s+card|barrier\s+certificate|"
+    r"license|licence|visa|medical\s+certificate|"
+    r"location|latitude|longitude|coordinates|gps|speed|ignition|odometer|"
+    r"fuel|sensor|temperature|humidity|weight|voltage|satellites|"
+    r"trip|route|idling|idle|over\s*speeding|harsh\s+acceleration|"
+    r"harsh\s+braking|harsh\s+cornering|alert|event|geofence"
+    r")\b",
+    flags=re.IGNORECASE,
+)
+
 _DATE_OR_TIME_RE = re.compile(
     r"\b("
     r"\d{4}-\d{1,2}-\d{1,2}|\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?|"
@@ -59,6 +108,25 @@ _INVENTED_DATE_RANGE_RE = re.compile(
 def _looks_like_report_request(*texts: str) -> bool:
     combined = " ".join(text for text in texts if text)
     return bool(_REPORT_INTENT_RE.search(combined))
+
+
+def _is_general_override_request(*texts: str) -> bool:
+    combined = " ".join(text for text in texts if text)
+    return bool(_GENERAL_OVERRIDE_RE.search(combined))
+
+
+def _looks_like_fleet_data_request(*texts: str) -> bool:
+    combined = " ".join(text for text in texts if text)
+    if not _FLEET_SCHEMA_INTENT_RE.search(combined):
+        return False
+    return bool(
+        _FLEET_LOOKUP_ACTION_RE.search(combined)
+        or _FLEET_UNAMBIGUOUS_DATA_RE.search(combined)
+    )
+
+
+def _read_only_fleet_response() -> str:
+    return "I support read-only fleet queries only."
 
 
 def _sanitize_refined_message(
@@ -184,7 +252,7 @@ Examples that MUST be "report":
 
 3) FLEET:
 If the user asks for stored fleet data but is not asking for a report, classify as "fleet".
-Examples: latest location, current speed, ignition status, driver of a vehicle, device installed, alerts/events data lookup, trip details, route/history playback, fuel/maintenance/utilization values, etc.
+Examples: list vehicles and expiry dates, vehicles expiring this year, latest location, current speed, ignition status, driver of a vehicle, device installed, alerts/events data lookup, trip details, route/history playback, fuel/maintenance/utilization values, asset/vehicle metadata, driver documents, device metadata, geofence assignments, alert rules, event logs, and stored analytics.
 
 4) GENERAL CONVERSATION:
 If none of the above apply, classify as "general conversation".
@@ -198,6 +266,49 @@ It handles:
 - Telemetry data (location, trips, routes, speed, idling, ignition, fuel, sensors, alerts)
 - Fleet asset metadata (vehicles, drivers, devices, assignments, groups)
 - Reports and summaries derived from stored fleet data
+
+========================
+DATABASE KNOWLEDGE FOR CLASSIFICATION
+========================
+The database contains these fleet domains and fields. If the user asks to list, show, retrieve, get, count, compare, filter, summarize, or check any of these stored values, classify as "fleet" unless it is explicitly a report request.
+
+Asset / vehicle data:
+- Vehicles/assets, asset_id, name, type, category, status, availability, device_availability, assigned_devices, created_at, expiry_date.
+- Vehicle details: plate_number, plate_type, vehicle_type, fleet_type, make, model, variant, year, VIN/chassis/engine numbers, fuel_type, transmission_type, odometer_reading, tank_capacity, consumption_rate, color.
+- Vehicle expiry/document fields: expiry_date, insurance_expiry, warranty_date, mvpi_expiry, istimara_expiry, operation_card_expiry, barrier_certificate_expiry.
+- Maintenance and operations fields: last_service_date, next_service values when present, tyre/tire change date, ownership/operation fields, cargo/load, capacity, specialization, safety/security, special equipment.
+- Device details on vehicles: device_details.imei, group_id, group_name, device_name.
+
+Telemetry / latest and historical AVL data:
+- Timestamp, GPS location coordinates, altitude, direction, satellites, speed, ignition_status, movement, GPS/GSM status, odometer, voltage, sensor data, driver and asset context.
+
+Trips and daily analytics:
+- Trip start/end, distance, duration, average/max speed, idling, harsh events, fuel, safety/behavior scores.
+- Daily analytics by asset/driver, distance, duration, idle/idling, over speeding, fuel, average speed, safety/behavior scores, total trips.
+
+Driver data:
+- Driver profile/name/contact/status/preferences/employment.
+- Driver asset assignments with start_date, end_date, status, assigned_by.
+- License issue/expiry/status, visa issue/expiry/status, medical certificate expiry/status, compliance dates/statuses, WASL logs.
+
+Device data:
+- Device id, IMEI, serial number, model, manufacturer, SIM, status, installation_date, warranty_expiry, assigned asset fields, WASL fields.
+
+Alerts, events, rules, and geofences:
+- Alert history, alert status/severity/type/name/location, alert rule links.
+- Events such as idling, harsh acceleration/braking/cornering, over speeding, sudden stop, sharp turn, GPS lock, low battery.
+- Alert rules/system alert rules, schedules, triggers, assigned assets, notifications.
+- Geofence metadata and asset assignments.
+
+Important classification examples:
+- "list vehicles and expiry dates that are expiring this year" => fleet
+- "which vehicles have insurance expiring this month" => fleet
+- "show drivers with license expiring in 2026" => fleet
+- "what devices have warranty expiry this year" => fleet
+- "give me fleet statistics report for LEB 8172" => report
+- "what is fleet tracking" => general conversation
+- "delete vehicle LEB 8172" => general conversation
+- "show internal _id for vehicle LEB 8172" => general conversation
 
 It does NOT handle:
 - Conceptual explanations about fleet tracking as an industry
@@ -397,8 +508,14 @@ response: <text or N/A>
         if not classification:
             classification = "general conversation"
 
-        if _looks_like_report_request(refined_message, response):
+        if _is_general_override_request(refined_message, response):
+            classification = "general conversation"
+            llm_response = _read_only_fleet_response()
+        elif _looks_like_report_request(refined_message, response):
             classification = "report"
+            llm_response = ""
+        elif _looks_like_fleet_data_request(refined_message):
+            classification = "fleet"
             llm_response = ""
         
         # If classification is general conversation and no response provided, generate default
@@ -421,14 +538,20 @@ response: <text or N/A>
             # Fallback: minimal non-LLM behavior
             refined_fallback = user_message.strip()
             lowered_fallback = refined_fallback.lower()
-            if _looks_like_report_request(lowered_fallback):
+            if _is_general_override_request(lowered_fallback):
+                classification_fallback = "general conversation"
+            elif _looks_like_report_request(lowered_fallback):
                 classification_fallback = "report"
-            elif any(k in lowered_fallback for k in ["vehicle", "plate", "alert", "driver", "device"]):
+            elif _looks_like_fleet_data_request(lowered_fallback):
                 classification_fallback = "fleet"
             else:
                 classification_fallback = "general conversation"
             # print()
-            response_fallback = "Hello, I am your fleet assistant. How can I help you today?" if classification_fallback == "general conversation" else ""
+            response_fallback = (
+                _read_only_fleet_response()
+                if _is_general_override_request(lowered_fallback)
+                else "Hello, I am your fleet assistant. How can I help you today?"
+            ) if classification_fallback == "general conversation" else ""
             return refined_fallback, classification_fallback, response_fallback
         
         # Format conversation history
@@ -460,8 +583,14 @@ response: <text or N/A>
             conversation_history,
         )
 
-        if _looks_like_report_request(user_message, refined_message):
+        if _is_general_override_request(user_message, refined_message):
+            classification = "general conversation"
+            llm_response = _read_only_fleet_response()
+        elif _looks_like_report_request(user_message, refined_message):
             classification = "report"
+            llm_response = ""
+        elif _looks_like_fleet_data_request(user_message, refined_message):
+            classification = "fleet"
             llm_response = ""
         
         # Update conversation history
