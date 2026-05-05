@@ -905,7 +905,7 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(defau
         refined_message, classification, llm_response = classifier.process_message(request.user_input)
         
         # Handle classification result
-        # Note: classification can be "general conversation" or "fleet"
+        # Note: classification can be "general conversation", "fleet", or "report"
         if classification == "general conversation":
             # General conversation - return LLM response directly
             # The classifier should always provide a response for general conversation
@@ -936,13 +936,15 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(defau
                     error=False
                 )
         
-        elif classification == "fleet":
-            # Fleet query - First check with FleetiReports (integrated)
+        elif classification in ("fleet", "report"):
             base_api_url = _build_reports_base_url(request.base_url)
             reports_api_handler = APIHandler(base_url=base_api_url, access_token=authorization)
 
-            reports_history = _build_reports_conversation_history(session_doc)
-            report_llm_response = llm_agent.process_user_input(refined_message, reports_history)
+            if classification == "report":
+                reports_history = _build_reports_conversation_history(session_doc)
+                report_llm_response = llm_agent.process_user_input(refined_message, reports_history)
+            else:
+                report_llm_response = None
 
             def _is_empty_pre_req(pre_req_obj: Any) -> bool:
                 if pre_req_obj is None:
