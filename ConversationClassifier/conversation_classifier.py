@@ -104,6 +104,8 @@ _INVENTED_DATE_RANGE_RE = re.compile(
     flags=re.IGNORECASE,
 )
 
+_ARABIC_CHAR_RE = re.compile(r"[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]")
+
 
 def _looks_like_report_request(*texts: str) -> bool:
     combined = " ".join(text for text in texts if text)
@@ -127,6 +129,10 @@ def _looks_like_fleet_data_request(*texts: str) -> bool:
 
 def _read_only_fleet_response() -> str:
     return "I support read-only fleet queries only."
+
+
+def _has_arabic_text_longer_than_5_chars(text: str) -> bool:
+    return len(_ARABIC_CHAR_RE.findall(text or "")) > 5
 
 
 def _sanitize_refined_message(
@@ -205,6 +211,47 @@ class ConversationClassifier:
         #     print("OPENAI_API_KEY detected and will be used for classification.")
         
         self.conversation_history: List[Dict[str, str]] = []
+
+    def _translate_arabic_to_english(self, user_message: str) -> str:
+        """
+        Translate Arabic user questions to English before classification.
+        Identifiers must remain exactly as entered by the user.
+        """
+        if not self.client or not _has_arabic_text_longer_than_5_chars(user_message):
+            return user_message
+
+        prompt = f"""Translate the user's fleet-management question from Arabic to English.
+
+Rules:
+- Return only the English question. No explanation, no quotes, no labels.
+- Preserve the user's intent exactly. Do not add missing context.
+- Preserve all person names, company names, vehicle names, plate numbers, IMEIs, IDs, codes, numbers, dates, times, Latin letters, Arabic letters used as identifiers, punctuation inside identifiers, spaces inside identifiers, and hyphens exactly as written.
+- Do not transliterate or translate identifiers. For example, keep a plate number or name exactly as the user typed it, even if it contains Arabic letters.
+- Translate only the normal Arabic words around those identifiers.
+
+User message:
+{user_message}
+"""
+
+        try:
+            resp = self.client.chat.completions.create(
+                model="gpt-5-mini",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You translate Arabic fleet-management questions into English while preserving identifiers exactly.",
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                reasoning_effort="low",
+                max_completion_tokens=300,
+            )
+            translated = (resp.choices[0].message.content or "").strip() if getattr(resp, "choices", None) else ""
+        except Exception as exc:
+            logger.debug("Arabic-to-English translation failed: %s", exc)
+            return user_message
+
+        return translated or user_message
     
     def format_conversation_history(self) -> str:
         """
@@ -559,6 +606,8 @@ response: <text or N/A>
         Returns:
             Tuple of (refined_message, classification, llm_response)
         """
+        user_message = self._translate_arabic_to_english(user_message.strip())
+
         if not self.client:
             # Fallback: minimal non-LLM behavior
             refined_fallback = user_message.strip()
