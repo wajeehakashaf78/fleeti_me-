@@ -118,7 +118,7 @@ def run_ollama_model(prompt: str) -> Dict[str, Any]:
                 {"role": "user", "content": prompt}
             ],
             reasoning_effort="low",
-            max_completion_tokens=800
+            max_completion_tokens=1600
         )
 
         response_text = (resp.choices[0].message.content or "").strip() if resp.choices else ""
