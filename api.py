@@ -148,7 +148,7 @@ from FleetiResponse.respond import (
     convert_query_response_times_for_user,
     generate_llm_response as generate_human_response,
 )
-from jwt_utils import decode_jwt_no_verify, extract_db_and_sub_tenant
+from jwt_utils import decode_jwt_no_verify, extract_db_and_sub_tenant, extract_db_from_url
 
 # FleetiReports modules (integrated)
 from FleetiReports.llm_agent import llm_agent
@@ -843,7 +843,8 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(defau
             )
 
         token_payload = decode_jwt_no_verify(authorization)
-        mongo_db, sub_tenant_id = extract_db_and_sub_tenant(token_payload)
+        _, sub_tenant_id = extract_db_and_sub_tenant(token_payload)
+        mongo_db = extract_db_from_url(request.base_url)
 
         if not mongo_db:
             return ChatResponse(

@@ -1,6 +1,7 @@
 import base64
 import json
 from typing import Any, Dict
+from urllib.parse import urlparse
 
 
 def _b64url_decode(data: str) -> bytes:
@@ -30,10 +31,26 @@ def decode_jwt_no_verify(token: str) -> Dict[str, Any]:
         return {}
 
 
+def extract_db_from_url(url: str) -> str | None:
+    """
+    Extract db name from a URL or hostname: text before the first dot.
+    e.g. "https://ihcc.tracking.me" or "ihcc.tracking.me" -> "ihcc"
+    """
+    if not url:
+        return None
+    try:
+        hostname = urlparse(url).hostname if "://" in url else url
+        part = (hostname or "").split(".")[0]
+        return part if part else None
+    except Exception:
+        return None
+
+
 def extract_db_and_sub_tenant(payload: Dict[str, Any]) -> tuple[str | None, str | None]:
     """
     Extract db name and sub_tenant_id from decoded JWT payload.
+    db_name is derived from SubTenantId (text before first dot).
     """
     sub_tenant_id = payload.get("SubTenantId") or payload.get("sub_tenant_id")
-    db_name = payload.get("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name")
+    db_name = extract_db_from_url(sub_tenant_id) if sub_tenant_id else None
     return db_name, sub_tenant_id
