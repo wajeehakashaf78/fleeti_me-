@@ -156,6 +156,9 @@ from FleetiReports.mongo_handler import mongo_handler
 from FleetiReports.api_handler import APIHandler
 from FleetiReports.models import LLMResponse
 
+# New GPT-5 agentic orchestrator (powers /chat/v2)
+from FleetiAgent import agent as fleeti_agent
+
 # Load environment variables
 load_dotenv()
 
@@ -1290,6 +1293,121 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(defau
             human_response=_user_friendly_failure_message(),
             error=False
         )
+
+
+@app.post("/chat/v2", response_model=ChatResponse)
+async def chat_v2(request: ChatRequest, authorization: Optional[str] = Header(default=None)):
+    """
+    GPT-5 agentic chat endpoint.
+
+    Same request/response contract as /chat, but a single Responses API
+    tool-calling loop (FleetiAgent) replaces the classifier -> reports -> RAG ->
+    mongo-string -> response pipeline. Runs alongside /chat for safe A/B + cutover.
+    """
+    try:
+        if not authorization:
+            return ChatResponse(human_response="Missing Authorization header.", error=True)
+
+        token_payload = decode_jwt_no_verify(authorization)
+        _, sub_tenant_id = extract_db_and_sub_tenant(token_payload)
+        mongo_db = extract_db_from_url(request.base_url)
+
+        if not mongo_db:
+            return ChatResponse(
+                human_response="Invalid token: missing database information.",
+                error=True,
+            )
+
+        # Scenario 1: create session with a static assistant message.
+        if request.assistant_static_input is not None:
+            history_saver = FleetiHistorySaver(
+                session_id="static_session",
+                sub_tenant_id=sub_tenant_id or "",
+                mongo_db=mongo_db,
+            )
+            session_id = history_saver.save_static_message(request.assistant_static_input)
+            return ChatResponse(human_response=None, session_id=session_id, error=False)
+
+        # Scenario 2: normal chat flow.
+        if not request.user_input or not request.session_id:
+            return ChatResponse(human_response="Missing user_input or session_id.", error=True)
+
+        history_saver = FleetiHistorySaver(
+            session_id=request.session_id,
+            sub_tenant_id=sub_tenant_id or "",
+            mongo_db=mongo_db,
+        )
+        session_cache_key = _session_cache_key(mongo_db, sub_tenant_id, request.session_id)
+        session_doc = _get_cached_session_document(history_saver, session_cache_key)
+
+        def save_general_message_to_history(**kwargs: Any) -> Dict[str, Any]:
+            saved_message = history_saver.save_general_message(**kwargs)
+            _append_message_to_session_cache(session_cache_key, saved_message)
+            return saved_message
+
+        def save_fleet_message_to_history(**kwargs: Any) -> Dict[str, Any]:
+            saved_message = history_saver.save_fleet_message(**kwargs)
+            _append_message_to_session_cache(session_cache_key, saved_message)
+            return saved_message
+
+        existing_history = history_saver.build_classifier_history_from_session_doc(session_doc)
+        history = existing_history[-8:] if existing_history else []
+
+        remove_sub_tenant_match = _should_remove_sub_tenant_match(
+            sub_tenant_id=sub_tenant_id,
+            base_url=request.base_url,
+        )
+
+        result = await fleeti_agent.run(
+            request.user_input,
+            history,
+            mongo_db=mongo_db,
+            sub_tenant_id=sub_tenant_id,
+            base_url=request.base_url,
+            authorization=authorization,
+            time_zone=request.time_zone,
+            remove_sub_tenant_match=remove_sub_tenant_match,
+            rag_pipeline=pipeline,
+        )
+
+        if result.error:
+            return ChatResponse(human_response=_user_friendly_failure_message(), error=False)
+
+        # Report with displayable data -> structured payload (matches legacy /chat).
+        if result.report_payload is not None:
+            save_fleet_message_to_history(
+                user_input=request.user_input,
+                refined_message=request.user_input,
+                selected_collections=[],
+                query="",
+                query_response=[],
+                human_response=result.report_payload,
+            )
+            return ChatResponse(human_response=result.report_payload, error=False)
+
+        # Fleet data question answered in natural language.
+        if result.used_fleet_query:
+            save_fleet_message_to_history(
+                user_input=request.user_input,
+                refined_message=request.user_input,
+                selected_collections=result.selected_collections,
+                query=result.last_fleet_query,
+                query_response=result.last_fleet_rows,
+                human_response=result.text,
+            )
+            return ChatResponse(human_response=result.text, error=False)
+
+        # General conversation, read-only refusal, or a request for a missing report prerequisite.
+        save_general_message_to_history(
+            user_input=request.user_input,
+            refined_message=request.user_input,
+            llm_response=result.text,
+        )
+        return ChatResponse(human_response=result.text, error=False)
+
+    except Exception as e:
+        logger.debug("[UnhandledChatV2Error] %s", str(e))
+        return ChatResponse(human_response=_user_friendly_failure_message(), error=False)
 
 
 @app.get("/conversations")

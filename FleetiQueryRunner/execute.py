@@ -670,6 +670,131 @@ def _inject_sub_tenant_to_payload(
     return result
 
 # ---------------------------
+# Object-level transforms for parsed payloads (used by run_payload).
+# These let the GPT-5 agent pass an already-parsed pipeline/filter so we never
+# do string repair: dates arrive as Extended JSON {"$date": "..."} or ISO
+# strings, and tenant isolation is enforced directly on the Python object.
+# ---------------------------
+
+_DATE_LIKE_RE = re.compile(
+    r'^\d{4}-\d{2}-\d{2}'
+    r'(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d{1,6})?)?(?:\s?(?:Z|[+\-]\d{2}:?\d{2}))?)?$'
+)
+
+
+def _apply_user_timezone_to_payload(node: Any, user_tz: timezone) -> Any:
+    """
+    Object-level analogue of _apply_user_timezone_to_query_dates.
+    Reinterprets model-emitted wall-clock date-times as the user's local time and
+    converts them to UTC. Only touches {"$date": "..."} values and ISO date-time
+    strings that carry a time component.
+    """
+    if isinstance(node, list):
+        return [_apply_user_timezone_to_payload(x, user_tz) for x in node]
+    if isinstance(node, dict):
+        if set(node.keys()) == {"$date"} and isinstance(node.get("$date"), str):
+            converted = _to_utc_iso_z(node["$date"], user_tz, reinterpret_utc_as_user_local=True)
+            return {"$date": converted or node["$date"]}
+        return {k: _apply_user_timezone_to_payload(v, user_tz) for k, v in node.items()}
+    if isinstance(node, str):
+        s = node.strip()
+        if _DATE_LIKE_RE.match(s) and re.search(r"\d{2}:\d{2}", s):
+            converted = _to_utc_iso_z(s, user_tz, reinterpret_utc_as_user_local=True)
+            return converted or node
+    return node
+
+
+def _coerce_iso_strings_to_datetime(node: Any) -> Any:
+    """
+    Convert leftover plain ISO date-time strings (with a time component) into BSON
+    datetimes so Mongo date comparisons work. Extended JSON {"$date": "..."} is
+    handled separately by _convert_extended_json via _rewrite_keys.
+    """
+    if isinstance(node, list):
+        return [_coerce_iso_strings_to_datetime(x) for x in node]
+    if isinstance(node, dict):
+        return {k: _coerce_iso_strings_to_datetime(v) for k, v in node.items()}
+    if isinstance(node, str):
+        s = node.strip()
+        if _DATE_LIKE_RE.match(s) and re.search(r"\d{2}:\d{2}", s):
+            try:
+                dt = dtparser.isoparse(s)
+            except Exception:
+                try:
+                    dt = dtparser.parse(s)
+                except Exception:
+                    return node
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt.astimezone(timezone.utc)
+    return node
+
+
+def _enforce_starting_collection_tenant(
+    coll: str, op: str, payload: MongoPayload, tenant_value: str
+) -> Tuple[MongoPayload, Optional[str]]:
+    """
+    Object-level analogue of api.py's _enforce_sub_tenant_filter.
+
+    Guarantees tenant isolation on the *starting* collection:
+      - Tenant-aware collection: inject sub_tenant_id into the first $match
+        (aggregate) or the filter (find); prepend a $match if none exists.
+      - Non-tenant-aware collection: require a $lookup into a tenant-aware
+        collection (the lookup sub-pipeline filter is injected separately by
+        _inject_sub_tenant_to_payload), else reject.
+
+    Returns (payload, error_message). A non-None error means the caller MUST
+    reject the query instead of executing it.
+    """
+    if coll in _TENANT_AWARE_COLLECTIONS:
+        if op == "aggregate" and isinstance(payload, list):
+            for i, stage in enumerate(payload):
+                if isinstance(stage, dict) and isinstance(stage.get("$match"), dict):
+                    match_body = stage["$match"]
+                    if any(_is_sub_tenant_filter_key(k) for k in match_body):
+                        return payload, None
+                    new_match: Dict[str, Any] = {"sub_tenant_id": tenant_value}
+                    new_match.update(match_body)
+                    new_payload = list(payload)
+                    new_payload[i] = {**stage, "$match": new_match}
+                    return new_payload, None
+            return [{"$match": {"sub_tenant_id": tenant_value}}] + list(payload), None
+
+        if op == "find" and isinstance(payload, dict):
+            if "filter" in payload:
+                filt = payload.get("filter") or {}
+                if not any(_is_sub_tenant_filter_key(k) for k in filt):
+                    new_filt: Dict[str, Any] = {"sub_tenant_id": tenant_value}
+                    new_filt.update(filt)
+                    payload = {**payload, "filter": new_filt}
+                return payload, None
+            if not any(_is_sub_tenant_filter_key(k) for k in payload):
+                new_filt = {"sub_tenant_id": tenant_value}
+                new_filt.update(payload)
+                return new_filt, None
+            return payload, None
+
+        return payload, (
+            f"Query on tenant-aware collection '{coll}' has an unsupported shape; "
+            f"refusing to run without sub_tenant_id."
+        )
+
+    # Non-tenant-aware starting collection: require a tenant-aware $lookup.
+    if op == "aggregate" and isinstance(payload, list):
+        for stage in payload:
+            if (
+                isinstance(stage, dict)
+                and isinstance(stage.get("$lookup"), dict)
+                and stage["$lookup"].get("from") in _TENANT_AWARE_COLLECTIONS
+            ):
+                return payload, None
+    return payload, (
+        f"Query on '{coll}' has no $lookup into a tenant-aware collection; "
+        f"cannot enforce tenant isolation."
+    )
+
+
+# ---------------------------
 # Runner
 # ---------------------------
 
@@ -779,6 +904,104 @@ class LlmMongoRunner:
             error_msg = f"Error executing MongoDB query: {str(e)}\n"
             error_msg += f"Raw response (first 500 chars): {raw_response[:500]}"
             raise RuntimeError(error_msg) from e
+
+    def run_payload(
+        self,
+        coll: str,
+        op: str,
+        payload: MongoPayload,
+        limit: int = 50,
+        user_time_zone: Optional[str] = None,
+        sub_tenant_id: Optional[str] = None,
+        remove_sub_tenant_match: bool = False,
+    ) -> List[Dict[str, Any]]:
+        """
+        Execute an ALREADY-PARSED MongoDB payload (no string repair).
+
+        Used by the GPT-5 agent: function-call arguments arrive as valid JSON, so
+        `payload` is a real Python list (aggregate pipeline) or dict (find filter,
+        optionally {"filter": ..., "projection": ...}). We run the same robust
+        object-level transforms as the legacy path — timezone normalization,
+        Extended JSON conversion, and tenant isolation — then execute.
+        """
+        try:
+            op = (op or "aggregate").strip().lower()
+            if op not in ("aggregate", "find"):
+                raise ValueError(f"Unsupported operation: {op}")
+
+            if user_time_zone:
+                user_tz = _parse_user_utc_offset(user_time_zone)
+                payload = _apply_user_timezone_to_payload(payload, user_tz)
+
+            payload = _rewrite_keys(payload)            # {"$date"|$oid|$numberLong} -> native
+            payload = _coerce_iso_strings_to_datetime(payload)  # bare ISO strings -> datetime
+
+            if remove_sub_tenant_match:
+                payload = _strip_sub_tenant_match_from_payload(op, payload)
+            elif sub_tenant_id:
+                payload, guard_error = _enforce_starting_collection_tenant(
+                    coll, op, payload, sub_tenant_id
+                )
+                if guard_error:
+                    raise ValueError(guard_error)
+                payload = _inject_sub_tenant_to_payload(op, payload, sub_tenant_id)
+
+            return self._execute(coll, op, payload, limit)
+        except Exception as e:
+            error_msg = f"Error executing MongoDB payload: {str(e)}\n"
+            error_msg += f"Collection={coll} op={op}"
+            raise RuntimeError(error_msg) from e
+
+    def _execute(self, coll: str, op: str, payload: MongoPayload, limit: int) -> List[Dict[str, Any]]:
+        """Build the logged query string, log it, and execute. Shared by run_payload."""
+        if op == "aggregate":
+            self.last_executed_query = (
+                f"db.{coll}.aggregate({json.dumps(payload, default=str)})"
+            )
+        elif op == "find":
+            if isinstance(payload, dict) and "filter" in payload:
+                self.last_executed_query = (
+                    f"db.{coll}.find({json.dumps(payload['filter'], default=str)}"
+                    + (f", {json.dumps(payload['projection'], default=str)}" if payload.get("projection") else "")
+                    + ")"
+                )
+            else:
+                self.last_executed_query = f"db.{coll}.find({json.dumps(payload, default=str)})"
+
+        query_log_lines = [
+            "📋 Executing MongoDB Query:",
+            f"Collection: {coll}",
+            f"Operation: {op}",
+        ]
+        if op == "aggregate":
+            query_log_lines.append(f"Pipeline: {json.dumps(payload, indent=2, default=str)}")
+        elif op == "find":
+            if isinstance(payload, dict) and "filter" in payload:
+                query_log_lines.append(f"Filter: {json.dumps(payload.get('filter', {}), indent=2, default=str)}")
+                if payload.get("projection"):
+                    query_log_lines.append(f"Projection: {json.dumps(payload.get('projection', {}), indent=2, default=str)}")
+            else:
+                query_log_lines.append(f"Filter: {json.dumps(payload, indent=2, default=str)}")
+        query_log_lines.append(f"Limit: {limit}")
+        logger.info("\n".join(query_log_lines))
+
+        collection = self.db[coll]
+
+        if op == "aggregate":
+            if not isinstance(payload, list):
+                raise ValueError("aggregate payload must be a list of stages.")
+            cursor = collection.aggregate(payload, allowDiskUse=True)
+            return list(_take(cursor, limit))
+
+        if op == "find":
+            if isinstance(payload, dict) and "filter" in payload:
+                cursor = collection.find(payload["filter"], payload.get("projection"))
+            else:
+                cursor = collection.find(payload)
+            return list(_take(cursor, limit))
+
+        raise ValueError(f"Unsupported operation: {op}")
+
 
 def _take(it: Iterable[Dict[str, Any]], n: int) -> Iterable[Dict[str, Any]]:
     count = 0
