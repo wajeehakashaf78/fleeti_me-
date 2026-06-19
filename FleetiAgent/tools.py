@@ -2,9 +2,9 @@
 Tool definitions + implementations for the FLEETI GPT-5 agentic orchestrator.
 
 Each tool is a thin wrapper over an already-existing, well-tested backend module:
-  - search_fleet_schema -> FleetDbSummarizer.RAGPipeline
-  - run_fleet_query     -> FleetiQueryRunner.LlmMongoRunner.run_payload (object path)
-  - run_report          -> FleetiCommon.process_report_request (mongo_handler + APIHandler)
+  - get_query_context -> FleetiAgent.schema_service (deterministic catalog, no ML/RAG)
+  - run_fleet_query   -> FleetiQueryRunner.LlmMongoRunner.run_payload (object path)
+  - run_report        -> FleetiCommon.process_report_request (mongo_handler + APIHandler)
 
 Tenant isolation, timezone localization, and result capping happen here / inside the
 runner, on parsed objects — never via string repair.
@@ -23,6 +23,7 @@ from FleetiCommon import (
     process_report_request,
     report_outcome_status,
 )
+from FleetiAgent.schema_service import build_menu, get_query_context, RULES
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +43,6 @@ class ToolContext:
     authorization: Optional[str]
     time_zone: Optional[str]
     remove_sub_tenant_match: bool
-    pipeline: Any  # shared RAGPipeline instance
 
     # captured side-effects (read by the endpoint after the run)
     used_fleet_query: bool = False
@@ -56,77 +56,40 @@ class ToolContext:
 # ================================
 # Tool JSON-schema definitions (Responses API "function" tools)
 # ================================
-_RUN_FLEET_QUERY_DESCRIPTION = """Execute a READ-ONLY MongoDB query against the fleet database and return matching rows.
-Call `search_fleet_schema` first to learn exact collection/field paths. Pass the query as a
-parsed object (it is executed as-is — do NOT wrap it in markdown or db.collection.aggregate(...)).
-
-STARTING COLLECTION:
-- Vehicle/plate questions -> start from "Asset".
-- Driving-behavior events (Idling, Harsh Acceleration/Braking/Cornering, Sharp Turn, Sudden Stop,
-  Over Speeding, Zigzag Driving, Frequent Start/Stop, Long Continuous Driving, Driving Without GPS
-  Lock, low-battery driving) -> "Events".
-- Other alerts and geofence alert logs -> "AlertHistory".
-- "latest/current" telemetry (location/speed/ignition) -> "AvlRecordLatest"; historical telemetry
-  (at a past time) -> "AvlRecord".
-- Daily aggregates -> "DailyAnalytics"; trips -> "Trip".
-
-IDENTIFIER RULES:
-- Plate number -> details.plate_number, matched case-insensitively & exactly:
-  {"details.plate_number": {"$regex": "^123 ABC$", "$options": "i"}}. Never match on _id/asset_id.
-- Geofence -> Geofence.name; AlertRule -> AlertRule.name; driver name ->
-  Driver.profile.first_name + last_name. Match all string identifiers with ^...$ case-insensitive regex.
-- Driver-of-vehicle: query the Driver collection's asset_assignments (take the latest assignment).
-
-DATES:
-- Emit ALL dates as Extended JSON: {"$date": "2025-11-01T00:00:00Z"} (NOT ISODate(...), NOT a bare
-  string). Use the current UTC datetime from the system prompt to resolve relative dates.
-- "latest/last/recent/current" -> $sort by the time field descending + $limit 1. "oldest/first" ->
-  ascending + $limit 1. Exact time -> match a +/-5 minute window and pick the closest record.
-- Only add $sort/$limit when the user implies ordering or a single/top-N result; never for "all".
-
-JOINS ($lookup) — only to reach fields in a DIFFERENT collection; never join a collection to itself:
-- Asset->Trip: localField "_id", foreignField "driver_info.asset_id"
-- Asset->AvlRecord/AvlRecordLatest: "_id" -> "device_context.asset_id"
-- Asset->Events: "_id" -> "device_context.asset_id"
-- Asset->AlertHistory: "_id" -> "device_context.asset_id"
-- AlertHistory->AlertRule: "alert_info.alert_rule_id" -> "_id"
-- AlertHistory->Geofence: "alert_info.geofence_id" -> "_id"
-- Asset->Device: "imei" -> "imei"; AvlRecord->Device: "device_id" -> "device_id"
-- DailyAnalytics->Asset: "asset_id" -> "_id"; DailyAnalytics->Driver: "driver_id" -> "_id"
-
-TENANT ISOLATION (handled server-side — do NOT add sub_tenant_id yourself):
-- The server injects sub_tenant_id into the starting $match automatically for tenant-scoped
-  collections. For a starting collection WITHOUT its own sub_tenant_id (e.g. AlertHistory, Trip,
-  DailyAnalytics), you MUST include a $lookup into a tenant-aware collection (Asset, AlertRule,
-  Driver, Device, Geofence, Events, AvlRecord) so the server can scope via that join.
-
-PROJECTION:
-- Always exclude _id ("_id": 0) and never project any *_id field. Use full paths, e.g.
-  {"$project": {"_id": 0, "plate_number": "$details.plate_number", "speed": "$latest.speed"}}.
-
-Distances are stored in METERS; return them raw (the assistant converts units when answering)."""
+_RUN_FLEET_QUERY_DESCRIPTION = (
+    "Execute a READ-ONLY MongoDB query and return matching rows. Call get_query_context FIRST "
+    "to fetch the exact field paths, join hints, and examples for the collections you need. "
+    "Pass the query as a parsed object — it is executed as-is, so do NOT wrap it in markdown or "
+    "in db.collection.aggregate(...).\n\n" + RULES
+)
 
 TOOL_DEFINITIONS: List[Dict[str, Any]] = [
     {
         "type": "function",
-        "name": "search_fleet_schema",
+        "name": "get_query_context",
         "description": (
-            "Retrieve the relevant MongoDB collection schemas for a fleet DATA question. "
-            "Call this BEFORE run_fleet_query to learn the exact field names and paths to use."
+            "Fetch the exact schema fields, join hints, and 2-3 relevant query examples for the "
+            "fleet collections/sections you need — call this BEFORE run_fleet_query. Request "
+            "sections by name, or a top-level collection name. Use this menu to choose:\n\n"
+            + build_menu()
         ),
         "parameters": {
             "type": "object",
             "properties": {
-                "query": {
-                    "type": "string",
+                "sections": {
+                    "type": "array",
+                    "items": {"type": "string"},
                     "description": (
-                        "Natural-language description of the data needed (entities + fields), e.g. "
-                        "'latest GPS location and speed for a vehicle by plate number'."
+                        "Collection or section names to fetch fields for, e.g. ['AvlRecordLatest'], "
+                        "['Asset','Trip'], or ['asset_details_document_status_flags']."
                     ),
-                }
+                },
+                "intent": {
+                    "type": "string",
+                    "description": "Short description of what you're trying to query (used to pick relevant examples).",
+                },
             },
-            "required": ["query"],
-            "additionalProperties": False,
+            "required": ["sections"],
         },
     },
     {
@@ -215,32 +178,16 @@ TOOL_DEFINITIONS: List[Dict[str, Any]] = [
 # ================================
 # Tool implementations
 # ================================
-def _tool_search_fleet_schema(args: Dict[str, Any], ctx: ToolContext) -> Dict[str, Any]:
-    query = (args.get("query") or "").strip()
-    if not query:
-        return {"error": "missing_query"}
+def _tool_get_query_context(args: Dict[str, Any], ctx: ToolContext) -> Dict[str, Any]:
+    sections = args.get("sections") or []
+    if isinstance(sections, str):
+        sections = [sections]
+    if not sections:
+        return {"error": "missing_sections"}
+    intent = args.get("intent")
 
-    rag_result = ctx.pipeline.query(query, use_llm=True)
-    collection_json = rag_result.get("collection_json", {}) or {}
-    collection_data = collection_json.get("collection_data", {}) or {}
-
-    schemas = "\n\n".join(
-        info.get("schema", "")
-        for info in collection_data.values()
-        if isinstance(info, dict)
-    ).strip()
-
-    selected: List[str] = []
-    for _parent, data in collection_data.items():
-        if isinstance(data, dict):
-            selected.extend(data.get("selected_sub_collections", []) or [])
-    if selected:
-        ctx.selected_collections = selected
-
-    return {
-        "schemas": schemas or "(no schema matched; use your knowledge of the collections)",
-        "collections": selected,
-    }
+    ctx.selected_collections = list(sections)
+    return get_query_context(sections, intent)
 
 
 def _tool_run_fleet_query(args: Dict[str, Any], ctx: ToolContext) -> Dict[str, Any]:
@@ -341,8 +288,8 @@ async def _tool_run_report(args: Dict[str, Any], ctx: ToolContext) -> Dict[str, 
 
 async def execute_tool(name: str, args: Dict[str, Any], ctx: ToolContext) -> Dict[str, Any]:
     """Dispatch a single tool call. Returns the JSON-able result handed back to the model."""
-    if name == "search_fleet_schema":
-        return _tool_search_fleet_schema(args, ctx)
+    if name == "get_query_context":
+        return _tool_get_query_context(args, ctx)
     if name == "run_fleet_query":
         return _tool_run_fleet_query(args, ctx)
     if name == "run_report":

@@ -6,6 +6,7 @@ Executes MongoDB queries to fetch asset and driver information
 from typing import List, Dict, Any
 import logging
 import re
+from datetime import datetime, timezone
 from pymongo import MongoClient
 from pymongo.errors import PyMongoError
 from .config import settings
@@ -16,6 +17,21 @@ logger = logging.getLogger(__name__)
 
 def print(*args: Any, **kwargs: Any) -> None:
     logger.debug(" ".join(str(arg) for arg in args))
+
+
+def _active_asset_match() -> Dict[str, Any]:
+    """Active-vehicle conditions (mirrors FleetiQueryRunner.execute._active_asset_filter):
+    only assets assigned to a device, Active status, and not expired."""
+    now = datetime.now(timezone.utc)
+    return {
+        "device_availability": "AssignedToDevice",
+        "status": "Active",
+        "$or": [
+            {"expiry_date": {"$gte": now}},
+            {"expiry_date": {"$exists": False}},
+            {"expiry_date": None},
+        ],
+    }
 
 
 class MongoDBHandler:
@@ -95,13 +111,11 @@ class MongoDBHandler:
             normalized_variants = self._build_plate_variants(plate_numbers)
 
             if all_assets_requested:
-                match_stage: Dict[str, Any] = {}
+                match_stage: Dict[str, Any] = _active_asset_match()
                 if sub_tenant_id:
                     match_stage["sub_tenant_id"] = sub_tenant_id
 
-                pipeline = []
-                if match_stage:
-                    pipeline.append({"$match": match_stage})
+                pipeline = [{"$match": match_stage}]
                 pipeline.append({
                     "$project": {
                         "_id": 1,
@@ -111,7 +125,8 @@ class MongoDBHandler:
             else:
                 # Execute aggregation query by specific plate values.
                 match_stage = {
-                    "_normalized_plate": {"$in": normalized_variants}
+                    "_normalized_plate": {"$in": normalized_variants},
+                    **_active_asset_match(),
                 }
                 if sub_tenant_id:
                     match_stage["sub_tenant_id"] = sub_tenant_id
@@ -225,6 +240,19 @@ class MongoDBHandler:
                 pipeline.append({"$match": group_match})
             pipeline.extend([
                 {"$unwind": "$assigned_assets"},
+                # Keep only group-assigned assets that are ACTIVE vehicles.
+                {
+                    "$lookup": {
+                        "from": "Asset",
+                        "let": {"_aid": "$assigned_assets.asset_id"},
+                        "pipeline": [
+                            {"$match": {"$expr": {"$eq": ["$_id", "$$_aid"]}, **_active_asset_match()}},
+                            {"$project": {"_id": 1}},
+                        ],
+                        "as": "_active_asset",
+                    }
+                },
+                {"$match": {"_active_asset.0": {"$exists": True}}},
                 {
                     "$project": {
                         "_id": 0,

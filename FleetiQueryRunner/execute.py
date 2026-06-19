@@ -795,6 +795,88 @@ def _enforce_starting_collection_tenant(
 
 
 # ---------------------------
+# Active-vehicle enforcement (server-side, like tenant isolation).
+# The bot only ever answers for ACTIVE vehicles, so every query that touches the
+# Asset collection (as the starting collection or via a $lookup) is restricted to:
+#   device_availability == "AssignedToDevice"
+#   AND status == "Active"
+#   AND (expiry_date >= now OR expiry_date missing OR expiry_date null)
+# ---------------------------
+
+def _active_asset_filter() -> Dict[str, Any]:
+    now = datetime.now(timezone.utc)
+    return {
+        "device_availability": "AssignedToDevice",
+        "status": "Active",
+        "$or": [
+            {"expiry_date": {"$gte": now}},
+            {"expiry_date": {"$exists": False}},
+            {"expiry_date": None},
+        ],
+    }
+
+
+def _subpipeline_has_active(stages: List[Any]) -> bool:
+    return any(
+        isinstance(s, dict) and isinstance(s.get("$match"), dict) and "device_availability" in s["$match"]
+        for s in stages
+    )
+
+
+def _inject_active_into_asset_lookup(lookup: Dict[str, Any]) -> Dict[str, Any]:
+    """Ensure an Asset $lookup only joins active vehicles (handles pipeline & simple form)."""
+    lookup = dict(lookup)
+    if isinstance(lookup.get("pipeline"), list):
+        if not _subpipeline_has_active(lookup["pipeline"]):
+            lookup["pipeline"] = [{"$match": _active_asset_filter()}] + list(lookup["pipeline"])
+        return lookup
+    # Simple form (localField/foreignField) -> convert to pipeline form preserving the join.
+    local_field = lookup.get("localField", "")
+    foreign_field = lookup.get("foreignField", "")
+    as_field = lookup.get("as", "")
+    safe_local = re.sub(r"[^a-zA-Z0-9_]", "_", local_field) if local_field else "field"
+    var_name = f"aaf_{safe_local}"
+    match_body = _active_asset_filter()
+    match_body["$expr"] = {"$eq": [f"${foreign_field}", f"$${var_name}"]}
+    return {
+        "from": "Asset",
+        "let": {var_name: f"${local_field}"},
+        "pipeline": [{"$match": match_body}],
+        "as": as_field,
+    }
+
+
+def _enforce_active_assets_on_payload(coll: str, op: str, payload: MongoPayload) -> MongoPayload:
+    """Restrict every Asset access in the payload to active vehicles."""
+    if op == "aggregate" and isinstance(payload, list):
+        result: List[Any] = []
+        for stage in payload:
+            if (
+                isinstance(stage, dict)
+                and isinstance(stage.get("$lookup"), dict)
+                and stage["$lookup"].get("from") == "Asset"
+            ):
+                result.append({"$lookup": _inject_active_into_asset_lookup(stage["$lookup"])})
+            else:
+                result.append(stage)
+        # Starting collection is Asset -> prepend an active-only $match (unless already present).
+        if coll == "Asset" and not _subpipeline_has_active(result):
+            result = [{"$match": _active_asset_filter()}] + result
+        return result
+
+    if op == "find" and coll == "Asset":
+        if isinstance(payload, dict) and "filter" in payload:
+            flt = payload.get("filter") or {}
+            if "device_availability" not in flt:
+                payload = {**payload, "filter": {"$and": [_active_asset_filter(), flt]} if flt else _active_asset_filter()}
+            return payload
+        if isinstance(payload, dict) and "device_availability" not in payload:
+            return {"$and": [_active_asset_filter(), payload]} if payload else _active_asset_filter()
+
+    return payload
+
+
+# ---------------------------
 # Runner
 # ---------------------------
 
@@ -935,6 +1017,10 @@ class LlmMongoRunner:
 
             payload = _rewrite_keys(payload)            # {"$date"|$oid|$numberLong} -> native
             payload = _coerce_iso_strings_to_datetime(payload)  # bare ISO strings -> datetime
+
+            # Restrict any Asset access to active vehicles (before tenant so the tenant
+            # filter merges into the same Asset $match).
+            payload = _enforce_active_assets_on_payload(coll, op, payload)
 
             if remove_sub_tenant_match:
                 payload = _strip_sub_tenant_match_from_payload(op, payload)

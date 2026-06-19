@@ -1,9 +1,10 @@
 """
 FLEETI GPT-5 agentic orchestrator (OpenAI Responses API).
 
-A single tool-calling loop replaces the legacy classifier -> reports -> RAG ->
-mongo-string -> response pipeline. GPT-5 decides which tools to call; reasoning
-persists across tool calls within the turn via `previous_response_id`.
+A single tool-calling loop. Cross-turn memory lives server-side in an OpenAI
+**Conversation** (the endpoint passes its id) — we send only the new user message
+each turn, and the conversation also carries reasoning across the within-turn tool
+calls. A stable instructions+tools prefix + prompt_cache_key maximize prompt caching.
 """
 
 import os
@@ -25,14 +26,45 @@ from FleetiAgent.tools import TOOL_DEFINITIONS, ToolContext, execute_tool
 
 load_dotenv()
 logger = logging.getLogger(__name__)
+usage_logger = logging.getLogger("FleetiAgent.usage")
 
 MAX_TOOL_TURNS = 6
-_HISTORY_PLACEHOLDER = "LLM RESPONSE"
+
+
+def _usage_from(resp: Any):
+    """Extract (input, cached_input, output, reasoning) token counts from a Responses result."""
+    u = getattr(resp, "usage", None)
+    if not u:
+        return 0, 0, 0, 0
+    inp = getattr(u, "input_tokens", 0) or 0
+    out = getattr(u, "output_tokens", 0) or 0
+    itd = getattr(u, "input_tokens_details", None)
+    cached = (getattr(itd, "cached_tokens", 0) or 0) if itd else 0
+    otd = getattr(u, "output_tokens_details", None)
+    reasoning = (getattr(otd, "reasoning_tokens", 0) or 0) if otd else 0
+    return inp, cached, out, reasoning
+
+
+def _estimate_cost_usd(input_t: int, cached_t: int, output_t: int) -> float:
+    """Rough per-turn cost using configurable per-1M prices (defaults = gpt-5.2)."""
+    price_in = float(os.getenv("FLEETI_PRICE_INPUT_PER_M", "1.75"))
+    price_cached = float(os.getenv("FLEETI_PRICE_CACHED_INPUT_PER_M", "0.175"))
+    price_out = float(os.getenv("FLEETI_PRICE_OUTPUT_PER_M", "14.0"))
+    uncached = max(input_t - cached_t, 0)
+    return (uncached * price_in + cached_t * price_cached + output_t * price_out) / 1_000_000
+
+
+def _is_conversation_error(exc: Exception) -> bool:
+    """True when a call failed because the conversation id is missing/invalid/expired."""
+    msg = str(exc).lower()
+    return "conversation" in msg and any(
+        s in msg for s in ("not found", "does not exist", "no conversation", "invalid")
+    )
 
 
 @dataclass
 class AgentResult:
-    """Outcome of one /chat/v2 turn, shaped so the endpoint can mirror legacy responses."""
+    """Outcome of one /chat turn, shaped so the endpoint can build the response."""
     text: str = ""
     report_payload: Optional[Dict[str, Any]] = None
     used_fleet_query: bool = False
@@ -40,6 +72,7 @@ class AgentResult:
     last_fleet_rows: List[Dict[str, Any]] = field(default_factory=list)
     selected_collections: List[str] = field(default_factory=list)
     error: bool = False
+    conversation_invalid: bool = False  # endpoint should re-seed a fresh conversation and retry
 
 
 class FleetiAgent:
@@ -49,44 +82,33 @@ class FleetiAgent:
         # Full GPT-5 orchestrator. Falls back to OPENAI_MODEL so it picks up the
         # account's configured model (e.g. gpt-5.2) even if the dedicated var is unset.
         self.model = os.getenv("FLEETI_ORCHESTRATOR_MODEL") or os.getenv("OPENAI_MODEL") or "gpt-5"
-        self.reasoning_effort = os.getenv("FLEETI_REASONING_EFFORT") or "medium"
-
-    # ----- input construction -----
-    @staticmethod
-    def _build_input(history: List[Dict[str, str]], user_message: str) -> List[Dict[str, str]]:
-        items: List[Dict[str, str]] = []
-        for turn in history or []:
-            user_text = (turn.get("user") or "").strip()
-            assistant_text = (turn.get("assistant") or "").strip()
-            if user_text:
-                items.append({"role": "user", "content": user_text})
-            if assistant_text and assistant_text != _HISTORY_PLACEHOLDER:
-                items.append({"role": "assistant", "content": assistant_text})
-        items.append({"role": "user", "content": user_message})
-        return items
+        # "low" by default to keep reasoning-token cost down; override via FLEETI_REASONING_EFFORT.
+        self.reasoning_effort = os.getenv("FLEETI_REASONING_EFFORT") or "low"
 
     # ----- OpenAI call (run off the event loop) -----
-    def _create(self, **kwargs: Any) -> Any:
+    def _create(self, conversation_id: str, **kwargs: Any) -> Any:
         return self.client.responses.create(
             model=self.model,
             instructions=build_orchestrator_instructions(),
             tools=TOOL_DEFINITIONS,
             reasoning={"effort": self.reasoning_effort},
+            conversation=conversation_id,
+            prompt_cache_key=conversation_id,  # pin cache routing per session
+            truncation="auto",                 # bound very long sessions to the context window
             **kwargs,
         )
 
     async def run(
         self,
         user_message: str,
-        history: List[Dict[str, str]],
         *,
+        conversation_id: str,
         mongo_db: str,
         sub_tenant_id: Optional[str],
         base_url: str,
         authorization: Optional[str],
         time_zone: Optional[str],
         remove_sub_tenant_match: bool,
-        rag_pipeline: Any,
     ) -> AgentResult:
         if self.client is None:
             return AgentResult(text="The assistant is not configured correctly.", error=True)
@@ -98,13 +120,34 @@ class FleetiAgent:
             authorization=authorization,
             time_zone=time_zone,
             remove_sub_tenant_match=remove_sub_tenant_match,
-            pipeline=rag_pipeline,
         )
 
-        input_items = self._build_input(history, user_message)
+        # Only the new user message is sent; the conversation supplies prior context.
+        input_items: List[Dict[str, Any]] = [{"role": "user", "content": user_message}]
+
+        # Per-turn token accounting (measurement only — no behavior change).
+        usage = {"calls": 0, "input": 0, "cached": 0, "output": 0, "reasoning": 0}
+
+        def _track(resp: Any) -> None:
+            i, c, o, r = _usage_from(resp)
+            usage["calls"] += 1
+            usage["input"] += i
+            usage["cached"] += c
+            usage["output"] += o
+            usage["reasoning"] += r
+
+        def _log_usage() -> None:
+            est = _estimate_cost_usd(usage["input"], usage["cached"], usage["output"])
+            pct = (100 * usage["cached"] // usage["input"]) if usage["input"] else 0
+            usage_logger.info(
+                "💰 token usage | calls=%d input=%d cached=%d (%d%%) output=%d reasoning=%d | est=$%.4f",
+                usage["calls"], usage["input"], usage["cached"], pct,
+                usage["output"], usage["reasoning"], est,
+            )
 
         try:
-            resp = await asyncio.to_thread(self._create, input=input_items)
+            resp = await asyncio.to_thread(self._create, conversation_id, input=input_items)
+            _track(resp)
 
             for _ in range(MAX_TOOL_TURNS):
                 function_calls = [o for o in (resp.output or []) if getattr(o, "type", None) == "function_call"]
@@ -124,20 +167,19 @@ class FleetiAgent:
                         "output": json.dumps(result, default=str),
                     })
 
-                # A report with displayable data short-circuits to the structured payload
-                # (mirrors legacy /chat, which returns JSON rather than prose for reports).
+                # A report with displayable data short-circuits to the structured payload.
                 if ctx.report_has_data:
+                    _log_usage()
                     return AgentResult(
                         report_payload=ctx.report_payload,
                         selected_collections=ctx.selected_collections,
                     )
 
-                resp = await asyncio.to_thread(
-                    self._create,
-                    input=tool_outputs,
-                    previous_response_id=resp.id,
-                )
+                # Continue the SAME conversation; tool outputs link to the pending calls.
+                resp = await asyncio.to_thread(self._create, conversation_id, input=tool_outputs)
+                _track(resp)
 
+            _log_usage()
             final_text = (getattr(resp, "output_text", "") or "").strip()
             if not final_text:
                 final_text = (
@@ -154,6 +196,9 @@ class FleetiAgent:
                 selected_collections=ctx.selected_collections,
             )
         except Exception as exc:  # noqa: BLE001 - endpoint converts to a safe user message
+            if _is_conversation_error(exc):
+                logger.debug("[FleetiAgent] conversation invalid: %s", exc)
+                return AgentResult(conversation_invalid=True)
             logger.debug("[FleetiAgent] run failed: %s", exc)
             return AgentResult(error=True)
 

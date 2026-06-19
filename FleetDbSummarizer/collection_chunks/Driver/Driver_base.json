@@ -1,7 +1,0 @@
-{
-    "_id": "3428c30b-9aed-42e5-b3d4-2618f74dd558",
-    "sub_tenant_id": "Kuser111",
-    "created_at": {
-      "$date": "2025-10-22T14:12:31.973Z"
-    }
-  }

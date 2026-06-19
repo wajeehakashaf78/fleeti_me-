@@ -78,105 +78,83 @@ class FleetiHistorySaver:
         except Exception:
             return str(assistant_value)
     
-    def load_session_history(self) -> List[Dict[str, str]]:
-        """
-        Load conversation history for the current session from MongoDB.
-        Returns list of conversation entries in format: [{"user": "...", "assistant": "..."}, ...]
-        
-        Returns:
-            List of conversation history entries
-        """
-        session_doc = self.db[self.collection_name].find_one({"sessionId": self.session_id})
-        return self.build_classifier_history_from_session_doc(session_doc)
-
-    def build_classifier_history_from_session_doc(
+    def build_conversation_seed_items(
         self,
         session_doc: Optional[Dict[str, Any]],
     ) -> List[Dict[str, str]]:
         """
-        Convert a session document to ConversationClassifier history format.
+        Build OpenAI Conversation seed items ([{role, content}, ...]) from the stored
+        transcript. Only used to seed a fresh conversation (first turn of a pre-existing
+        session, or recovery after a conversation went missing on OpenAI's side).
         """
         if not session_doc:
             return []
 
-        # Convert MongoDB messages to ConversationClassifier format
-        history = []
-        messages = session_doc.get("messages", [])
-        
-        for msg in messages:
+        items: List[Dict[str, str]] = []
+        for msg in session_doc.get("messages", []):
+            if "assistant_static_input" in msg:
+                content = msg.get("assistant_static_input", "")
+                if content:
+                    items.append({"role": "assistant", "content": content})
+                continue
+
+            user_text = (msg.get("user_input") or "").strip()
+            if user_text:
+                items.append({"role": "user", "content": user_text})
+
             if msg.get("type") == "general":
-                history.append({
-                    "user": msg.get("refined_message", msg.get("user_input", "")),
-                    "assistant": msg.get("llm_response", "")
-                })
-            elif msg.get("type") == "fleet":
-                history.append({
-                    "user": msg.get("refined_message", msg.get("user_input", "")),
-                    "assistant": self._compact_assistant_for_history(msg.get("human_response", "LLM RESPONSE"))
-                })
-        
-        return history
-    
-    def save_general_message(
-        self,
-        user_input: str,
-        refined_message: str,
-        llm_response: str
-    ) -> Dict[str, Any]:
-        """
-        Save a general conversation message to MongoDB.
-        
-        Args:
-            user_input: Original user input
-            refined_message: Refined user message
-            llm_response: LLM response
-        """
+                assistant = msg.get("llm_response", "")
+            else:
+                assistant = self._compact_assistant_for_history(msg.get("human_response", ""))
+            if assistant:
+                items.append({"role": "assistant", "content": assistant})
+
+        return items
+
+    def get_conversation_id(self, session_doc: Optional[Dict[str, Any]] = None) -> Optional[str]:
+        """Return the stored OpenAI conversation id for this session, if any."""
+        doc = session_doc if session_doc is not None else self.get_session_document()
+        return (doc or {}).get("openai_conversation_id")
+
+    def set_conversation_id(self, conversation_id: str) -> None:
+        """Persist the OpenAI conversation id on the session document (upsert)."""
+        self.db[self.collection_name].update_one(
+            {"sessionId": self.session_id},
+            {
+                "$set": {"openai_conversation_id": conversation_id},
+                "$setOnInsert": {
+                    "sessionId": self.session_id,
+                    "sub_tenant_id": self.sub_tenant_id,
+                    "created_at": datetime.now(timezone.utc),
+                },
+            },
+            upsert=True,
+        )
+
+    def save_general_message(self, user_input: str, llm_response: str) -> Dict[str, Any]:
+        """Save a general-conversation turn (trimmed: user input + final response)."""
         message = {
             "type": "general",
             "user_input": user_input,
-            "refined_message": refined_message,
             "llm_response": llm_response,
-            "timestamp": datetime.now(timezone.utc)
+            "timestamp": datetime.now(timezone.utc),
         }
-        
-        self._append_message(message)
-        return message
-    
-    def save_fleet_message(
-        self,
-        user_input: str,
-        refined_message: str,
-        selected_collections: List[str],
-        query: str,
-        query_response: List[Dict[str, Any]],
-        human_response: str
-    ) -> Dict[str, Any]:
-        """
-        Save a fleet-related question and response to MongoDB.
-        
-        Args:
-            user_input: Original user input
-            refined_message: Refined user message
-            selected_collections: List of selected collections (e.g., ["asset_details_base", "AvlRecord_base"])
-            query: MongoDB query generated by LLM
-            query_response: Response from MongoDB query execution
-            human_response: Human-readable response generated by LLM
-        """
-        message = {
-            "type": "fleet",
-            "user_input": user_input,
-            "refined_message": refined_message,
-            "selected_collections": selected_collections,
-            "query": query,
-            "query_response": query_response,
-            "human_response": human_response,
-            "timestamp": datetime.now(timezone.utc)
-        }
-        
         self._append_message(message)
         return message
 
-    def save_static_message(self, message: str) -> str:
+    def save_fleet_message(self, user_input: str, query: str, human_response: Any) -> Dict[str, Any]:
+        """Save a fleet turn (trimmed: user input + generated query + final response)."""
+        message = {
+            "type": "fleet",
+            "user_input": user_input,
+            "query": query,
+            "human_response": human_response,
+            "timestamp": datetime.now(timezone.utc),
+        }
+        self._append_message(message)
+        return message
+
+    def save_static_message(self, message: str, conversation_id: Optional[str] = None) -> str:
         """
         Create a new session document with a static assistant message.
         Returns the MongoDB document ID as the session ID.
@@ -194,6 +172,8 @@ class FleetiHistorySaver:
                 }
             ]
         }
+        if conversation_id:
+            doc["openai_conversation_id"] = conversation_id
         self.db[self.collection_name].insert_one(doc)
         logger.debug("Created new session document for sessionId: %s with sub_tenant_id: %s", str(new_id), self.sub_tenant_id)
         return str(new_id)
