@@ -24,15 +24,18 @@ except ImportError:
 MongoPayload = Union[List[Dict[str, Any]], Dict[str, Any]]
 logger = logging.getLogger(__name__)
 
+# Full results are fetched (the agent caps what the model SEES, not what we fetch).
+# This is only a defensive ceiling so a pathological query can't exhaust memory.
+_MAX_QUERY_ROWS = int(os.getenv("FLEETI_MAX_QUERY_ROWS", "100000"))
+
 
 def print(*args: Any, **kwargs: Any) -> None:
     logger.debug(" ".join(str(arg) for arg in args))
 
 # Collections that carry sub_tenant_id directly on their documents.
-# Must match the same set defined in api.py.
 _TENANT_AWARE_COLLECTIONS = frozenset({
-    "AlertRule", "Asset", "AvlRecord", "AvlRecordLatest",
-    "Device", "Driver", "Events", "Geofence",
+    "AlertHistory", "AlertRule", "Asset", "AssetGroup", "AvlRecord",
+    "AvlRecordLatest", "Device", "Driver", "Geofence",
 })
 
 # ---------------------------
@@ -856,7 +859,14 @@ def _enforce_active_assets_on_payload(coll: str, op: str, payload: MongoPayload)
                 and isinstance(stage.get("$lookup"), dict)
                 and stage["$lookup"].get("from") == "Asset"
             ):
-                result.append({"$lookup": _inject_active_into_asset_lookup(stage["$lookup"])})
+                lookup = _inject_active_into_asset_lookup(stage["$lookup"])
+                result.append({"$lookup": lookup})
+                # Inner-join semantics: a record whose linked vehicle isn't active must NOT
+                # appear at all (no orphan rows with a blank plate). Drop rows where the
+                # active-Asset join came back empty, regardless of how the model $unwinds.
+                as_field = lookup.get("as")
+                if as_field:
+                    result.append({"$match": {as_field: {"$ne": []}}})
             else:
                 result.append(stage)
         # Starting collection is Asset -> prepend an active-only $match (unless already present).
@@ -992,13 +1002,16 @@ class LlmMongoRunner:
         coll: str,
         op: str,
         payload: MongoPayload,
-        limit: int = 50,
+        limit: Optional[int] = None,
         user_time_zone: Optional[str] = None,
         sub_tenant_id: Optional[str] = None,
         remove_sub_tenant_match: bool = False,
     ) -> List[Dict[str, Any]]:
         """
         Execute an ALREADY-PARSED MongoDB payload (no string repair).
+
+        Returns the FULL result set (capped only by the defensive _MAX_QUERY_ROWS
+        ceiling) — the agent decides how much of it the model sees.
 
         Used by the GPT-5 agent: function-call arguments arrive as valid JSON, so
         `payload` is a real Python list (aggregate pipeline) or dict (find filter,
@@ -1032,7 +1045,8 @@ class LlmMongoRunner:
                     raise ValueError(guard_error)
                 payload = _inject_sub_tenant_to_payload(op, payload, sub_tenant_id)
 
-            return self._execute(coll, op, payload, limit)
+            effective_limit = _MAX_QUERY_ROWS if (not limit or limit <= 0) else min(limit, _MAX_QUERY_ROWS)
+            return self._execute(coll, op, payload, effective_limit)
         except Exception as e:
             error_msg = f"Error executing MongoDB payload: {str(e)}\n"
             error_msg += f"Collection={coll} op={op}"

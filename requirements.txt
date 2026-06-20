@@ -4,6 +4,7 @@ openai>=1.66.0  # Responses API (client.responses.create) used by FleetiAgent
 python-dotenv>=1.0.0
 fastapi>=0.104.0
 uvicorn>=0.24.0
+openpyxl>=3.1.0  # XLSX export for large result sets (export_results tool)
 # (Removed legacy RAG deps chromadb / sentence-transformers / rank-bm25 — the
 #  /chat agent uses the deterministic schema_service, no embeddings/cross-encoder.)
 

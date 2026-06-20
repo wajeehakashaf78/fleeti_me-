@@ -3,11 +3,12 @@ Fields:
 - _id: uuid
 - name: string
 - description: string
-- type: string
-- status: string
-- coordinates: array<array<float>>
-- radius: float
+- type: string ("Polygon" or "Circle")
+- status: string ("Active" or "Inactive")
+- coordinates: array<array<float>> ([latitude, longitude] pairs; Circle has a single center pair)
+- radius: float|null (meters; set for Circle type)
 - event: int
+- assigned_to: string|null
 - sub_tenant_id: string
 - created_at: BSON Date
-
+- updated_at: BSON Date

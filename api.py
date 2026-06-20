@@ -11,12 +11,14 @@ import os
 import json
 import copy
 import time
+import asyncio
 import logging
 from typing import Optional, Dict, Any, List, Tuple
 from datetime import datetime, timezone
 
-from fastapi import FastAPI, Header
+from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 
@@ -50,16 +52,39 @@ def _configure_api_logging() -> None:
     history_logger.setLevel(logging.INFO)
     history_logger.addFilter(_MessagePrefixFilter("Appended message to existing session:"))
 
-    # Per-turn token usage / cost (measurement).
-    logging.getLogger("FleetiAgent.usage").setLevel(logging.INFO)
-
+    # FLEETI agent + tools (turn start, run_fleet_query, aggregate_results / export_results
+    # step logs), report API calls, and per-turn token usage -> INFO (terminal).
     for name in (
-        "FleetiAgent.agent",
-        "FleetiAgent.tools",
-        "FleetiReports.api_handler",
-        "FleetiReports.mongo_handler",
+        "FleetiAgent.agent", "FleetiAgent.tools", "FleetiAgent.usage",
+        "FleetiReports.api_handler", "FleetiReports.mongo_handler",
     ):
-        logging.getLogger(name).setLevel(logging.WARNING)
+        logging.getLogger(name).setLevel(logging.INFO)
+
+    # Mirror the per-question trace (turn start, executed query, tool steps, token usage)
+    # to a rotating log file, in addition to the terminal.
+    try:
+        from logging.handlers import RotatingFileHandler
+        log_path = os.getenv("FLEETI_LOG_FILE") or os.path.join("logs", "fleeti.log")
+        os.makedirs(os.path.dirname(log_path) or ".", exist_ok=True)
+        file_handler = RotatingFileHandler(
+            log_path, maxBytes=5_000_000, backupCount=3, encoding="utf-8"
+        )
+        file_handler.setLevel(logging.INFO)
+        file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+        for name in (
+            "FleetiAgent.agent",
+            "FleetiAgent.tools",
+            "FleetiAgent.usage",
+            "FleetiQueryRunner.execute",
+            "FleetiReports.api_handler",
+            "FleetiReports.mongo_handler",
+            "FleetiHistorySaver.history_saver",
+        ):
+            lg = logging.getLogger(name)
+            if not any(isinstance(h, RotatingFileHandler) for h in lg.handlers):
+                lg.addHandler(file_handler)
+    except Exception:
+        pass
 
 
 _configure_api_logging()
@@ -68,6 +93,7 @@ logger = logging.getLogger(__name__)
 # Components and helpers
 from FleetiHistorySaver.history_saver import FleetiHistorySaver
 from FleetiAgent import agent as fleeti_agent
+from FleetiAgent.tools import EXPORTS_DIR, sweep_old_exports
 from FleetiCommon import should_remove_sub_tenant_match
 from jwt_utils import decode_jwt_no_verify, extract_db_and_sub_tenant, extract_db_from_url
 
@@ -78,6 +104,11 @@ load_dotenv()
 # Session history cache (per session, short TTL)
 # ================================
 SESSION_HISTORY_CACHE_TTL_SECONDS = int(os.getenv("SESSION_HISTORY_CACHE_TTL_SECONDS", "60"))
+# After this many turns on one OpenAI conversation, reset to a fresh EMPTY conversation
+# (clears context to keep per-turn cost bounded). No history is re-injected.
+CONVERSATION_TURN_LIMIT = int(os.getenv("FLEETI_CONVERSATION_TURN_LIMIT", "10"))
+# Reuse the agent logger so reset events land in both terminal and the log file.
+agent_logger = logging.getLogger("FleetiAgent.agent")
 _SessionCacheKey = Tuple[str, str, str]
 _SESSION_HISTORY_CACHE: Dict[_SessionCacheKey, Dict[str, Any]] = {}
 
@@ -155,6 +186,15 @@ def _set_cached_conversation_id(cache_key: _SessionCacheKey, conversation_id: st
         _SESSION_HISTORY_CACHE[cache_key] = cached
     cached["expires_at"] = now + SESSION_HISTORY_CACHE_TTL_SECONDS
     cached["session_doc"]["openai_conversation_id"] = conversation_id
+    cached["session_doc"]["conversation_turn_count"] = 0  # new conversation starts fresh
+
+
+def _set_cached_conversation_turn_count(cache_key: _SessionCacheKey, count: int) -> None:
+    """Update the cached turn counter so the next turn (within TTL) sees the right value."""
+    cached = _SESSION_HISTORY_CACHE.get(cache_key)
+    if cached is not None and cached.get("session_doc") is not None:
+        cached["session_doc"]["conversation_turn_count"] = count
+        cached["expires_at"] = time.monotonic() + SESSION_HISTORY_CACHE_TTL_SECONDS
 
 
 # ================================
@@ -204,15 +244,12 @@ def _user_friendly_failure_message() -> str:
 def _create_conversation(
     history_saver: FleetiHistorySaver,
     session_cache_key: _SessionCacheKey,
-    session_doc: Optional[Dict[str, Any]],
 ) -> str:
     """
-    Create a fresh OpenAI Conversation (seeded from the stored transcript when the
-    session already has messages), persist its id on the session doc + cache, return it.
+    Create a fresh, EMPTY OpenAI Conversation (no prior history injected) and persist its
+    id on the session doc + cache (resetting the turn counter). Return the id.
     """
-    client = fleeti_agent.client
-    seed_items = history_saver.build_conversation_seed_items(session_doc)
-    conv = client.conversations.create(items=seed_items) if seed_items else client.conversations.create()
+    conv = fleeti_agent.client.conversations.create()
     history_saver.set_conversation_id(conv.id)
     _set_cached_conversation_id(session_cache_key, conv.id)
     return conv.id
@@ -253,12 +290,46 @@ class ChatResponse(BaseModel):
     human_response: Optional[Any] = Field(default=None, description="Natural language response or structured data")
     session_id: Optional[str] = Field(default=None, description="Session ID (MongoDB document ID)")
     error: bool = Field(default=False, description="Whether an error occurred")
+    download_url: Optional[str] = Field(default=None, description="Download link for a generated file (e.g. exported .xlsx), if any")
 
 
 @app.get("/")
 async def root():
     """Health check endpoint."""
     return {"status": "ok", "message": "FLEETI API is running", "version": "2.0.0"}
+
+
+@app.on_event("startup")
+async def _on_startup() -> None:
+    """Ensure the exports folder exists and periodically purge expired files."""
+    try:
+        EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
+
+    async def _cleaner() -> None:
+        while True:
+            sweep_old_exports()
+            await asyncio.sleep(1800)  # every 30 minutes
+
+    asyncio.create_task(_cleaner())
+
+
+@app.get("/downloads/{filename}")
+async def download_export(filename: str):
+    """Serve a generated export file (e.g. .xlsx). Files expire after a few hours."""
+    sweep_old_exports()
+    safe = os.path.basename(filename)
+    if safe != filename or not safe.endswith(".xlsx"):
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    path = EXPORTS_DIR / safe
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="File not found or expired")
+    return FileResponse(
+        str(path),
+        filename=safe,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
 
 
 @app.post("/chat", response_model=ChatResponse)
@@ -321,9 +392,21 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(defau
             return ChatResponse(human_response=_user_friendly_failure_message(), error=False)
 
         # Cross-turn memory lives in an OpenAI Conversation; we only send the new message.
+        # Every CONVERSATION_TURN_LIMIT turns we reset to a fresh EMPTY conversation to keep
+        # per-turn cost bounded (no history is carried over).
         conversation_id = history_saver.get_conversation_id(session_doc)
-        if not conversation_id:
-            conversation_id = _create_conversation(history_saver, session_cache_key, session_doc)
+        turn_count = int((session_doc or {}).get("conversation_turn_count", 0) or 0)
+
+        if conversation_id and turn_count >= CONVERSATION_TURN_LIMIT:
+            agent_logger.info(
+                "♻ context reset after %d turns | session=%s (starting a fresh conversation)",
+                turn_count, request.session_id,
+            )
+            conversation_id = _create_conversation(history_saver, session_cache_key)
+            turn_count = 0
+        elif not conversation_id:
+            conversation_id = _create_conversation(history_saver, session_cache_key)
+            turn_count = 0
 
         remove_sub_tenant_match = should_remove_sub_tenant_match(
             sub_tenant_id=sub_tenant_id,
@@ -344,9 +427,15 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(defau
 
         result = await _run(conversation_id)
         if result.conversation_invalid:
-            # Conversation missing/expired on OpenAI -> reseed a fresh one from Mongo, retry once.
-            conversation_id = _create_conversation(history_saver, session_cache_key, session_doc)
+            # Conversation missing/expired on OpenAI -> start a fresh empty one, retry once.
+            conversation_id = _create_conversation(history_saver, session_cache_key)
+            turn_count = 0
             result = await _run(conversation_id)
+
+        # Record this turn against the current conversation (drives the 10-turn reset).
+        turn_count += 1
+        history_saver.set_conversation_turn_count(turn_count)
+        _set_cached_conversation_turn_count(session_cache_key, turn_count)
 
         if result.error or result.conversation_invalid:
             return ChatResponse(human_response=_user_friendly_failure_message(), error=False)
@@ -360,21 +449,21 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(defau
             )
             return ChatResponse(human_response=result.report_payload, error=False)
 
-        # Fleet data question answered in natural language.
+        # Fleet data question answered in natural language (optionally with an export link).
         if result.used_fleet_query:
             save_fleet_message_to_history(
                 user_input=request.user_input,
                 query=result.last_fleet_query,
                 human_response=result.text,
             )
-            return ChatResponse(human_response=result.text, error=False)
+            return ChatResponse(human_response=result.text, download_url=result.export_url, error=False)
 
         # General conversation, read-only refusal, or a request for a missing report prerequisite.
         save_general_message_to_history(
             user_input=request.user_input,
             llm_response=result.text,
         )
-        return ChatResponse(human_response=result.text, error=False)
+        return ChatResponse(human_response=result.text, download_url=result.export_url, error=False)
 
     except Exception as e:
         logger.debug("[UnhandledChatError] %s", str(e))

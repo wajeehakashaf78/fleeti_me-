@@ -1,9 +1,7 @@
 Collection: Geofence
 Fields:
-- asset_assignments: array<object>
-- asset_assignments[].asset_id: string
-- asset_assignments[].asset_name: string
-- asset_assignments[].asset_type: string
-- asset_assignments[].asset_category: string
+- asset_assignments: array<object> (assets assigned to this geofence)
+- asset_assignments[].asset_id: string (links to Asset._id - join for asset details/plate)
 - asset_assignments[].assigned_at: BSON Date
-
+- asset_group_assignments: array<object> (asset groups assigned to this geofence)
+- asset_group_assignments[].group_id: string (links to AssetGroup._id - join for group/asset details)

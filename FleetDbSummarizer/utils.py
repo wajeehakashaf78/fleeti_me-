@@ -602,30 +602,31 @@ def generate_relationship_rules(selected_collections: List[str]) -> List[str]:
     """
     # Define relationship mappings (collection1 -> collection2: description)
     relationships = {
-        ("Asset", "Trip"): "The relation between the Asset and the Trips collection is one to many. For each asset there may be many trips. Trip.driver_info.asset_id = Asset.id",
-        ("Asset", "Events"): "The relation between the Asset and the Events collection is one to many. For each asset there may be many events. Events.device_context.asset_id = Asset.id",
-        ("Asset", "AlertHistory"): "The relation between the Asset and the AlertHistory collection is one to many. For each asset there may be many alert history records. AlertHistory.asset_info._id = Asset.id",
-        ("Asset", "AvlRecord"): "The relation between the Asset and the AvlRecord collection is one to many. For each asset there may be many AVL records. AvlRecord.device_context.asset_id = Asset.id",
-        ("Asset", "Geofence"): "The relation between the Asset and the Geofence collection is many to many. Assets can be assigned to multiple geofences, and geofences can contain multiple assets.",
-        ("Asset", "Device"): "The relation between the Asset and the Device collection is one to many. For each asset there may be many devices. Device.asset_id = Asset.id & Device.imei = Asset.imei",
-        ("Asset", "Driver"): "The relation between the Asset and the Driver collection is many to many. Drivers can be assigned to multiple assets, and assets can be assigned to multiple drivers. Driver.asset_assignments._id = Asset.id",
-        ("Asset", "DailyAnalytics"): "The relation between the Asset and the DailyAnalytics collection is one to many. For each asset there may be many daily analytics records. DailyAnalytics.asset_id = Asset.id",
-        
-        ("Driver", "Trip"): "The relation between the Driver and the Trips collection is one to many. For each driver there may be many trips. Trip.driver_info.driver_info.id = Driver.id",
-        ("Driver", "Events"): "The relation between the Driver and the Events collection is one to many. For each driver there may be many events. Events.device_context.driver_info.id = Driver.id",
-        ("Driver", "AvlRecord"): "The relation between the Driver and the AvlRecord collection is one to many. For each driver there may be many AVL records. AvlRecord.device_context.driver_info.id = Driver.id",
-        ("Driver", "DailyAnalytics"): "The relation between the Driver and the DailyAnalytics collection is one to many. For each driver there may be many daily analytics records. DailyAnalytics.driver_id = Driver.id",
-        
-        ("Trip", "Device"): "The relation between the Trip and the Device collection is one to many. For each trip there may be many devices. Device.imei = Trip.imei",
-        
-        ("Geofence", "Asset"): "The relation between the Geofence and the Asset collection is many to many. Geofences can contain multiple assets, and assets can be assigned to multiple geofences. Geofence.asset_assignments.asset_id = Asset.id",
-        ("Geofence", "AlertHistory"): "The relation between the Geofence and the AlertHistory collection is one to many. For each geofence there may be many geofence event records in AlertHistory. AlertHistory.alert_info.alert_rule_id = Geofence.id",
-        
-        ("AlertRule", "AlertHistory"): "The relation between the AlertRule and the AlertHistory collection is one to many. For each alert rule there may be many alert history records when the rule is triggered. AlertHistory.alert_info.alert_rule_id = AlertRule.id",
-        
-        ("SystemAlertRule", "Events"): "The relation between the SystemAlertRule and the Events collection is one to many. For each system alert rule there may be many event records when the rule is triggered. Events.event_type = SystemAlertRule.event_type",
-        
-        ("Device", "AvlRecord"): "The relation between the Device and the AvlRecord collection is one to many. For each device there may be many AVL records. Device.imei = AvlRecord.imei & Device.id = AvlRecord.device_id",
+        ("Asset", "Trip"): "The relation between the Asset and the Trips collection is one to many. For each asset there may be many trips. Trip.driver_info.asset_id = Asset._id",
+        ("Asset", "AlertHistory"): "The relation between the Asset and the AlertHistory collection is one to many. For each asset there may be many alert/event log records. AlertHistory.asset_info._id = Asset._id",
+        ("Asset", "AvlRecord"): "The relation between the Asset and the AvlRecord collection is one to many. For each asset there may be many AVL records. AvlRecord.device_context.asset_id = Asset._id (or join on imei).",
+        ("Asset", "Geofence"): "The relation between the Asset and the Geofence collection is many to many. Geofence.asset_assignments.asset_id = Asset._id.",
+        ("Asset", "Device"): "The relation between the Asset and the Device collection is one to one. Device.imei = Asset.details.device_details.imei",
+        ("Asset", "Driver"): "The relation between the Asset and the Driver collection is many to many. Driver.asset_assignments._id = Asset._id",
+        ("Asset", "DailyAnalytics"): "The relation between the Asset and the DailyAnalytics collection is one to many. DailyAnalytics.asset_id = Asset._id",
+        ("Asset", "AssetGroup"): "The relation between the Asset and the AssetGroup collection is many to many. AssetGroup.assigned_assets.asset_id = Asset._id (also Asset.details.device_details.group_id = AssetGroup._id).",
+
+        ("Driver", "Trip"): "The relation between the Driver and the Trips collection is one to many. Trip.driver_info.driver_info.id = Driver._id",
+        ("Driver", "AvlRecord"): "The relation between the Driver and the AvlRecord collection is one to many. AvlRecord.device_context.driver_info.id = Driver._id",
+        ("Driver", "DailyAnalytics"): "The relation between the Driver and the DailyAnalytics collection is one to many. DailyAnalytics.driver_id = Driver._id",
+
+        ("Trip", "Device"): "The relation between the Trip and the Device collection is one to many. Device.imei = Trip.imei",
+
+        ("Geofence", "Asset"): "The relation between the Geofence and the Asset collection is many to many. Geofence.asset_assignments.asset_id = Asset._id",
+        ("Geofence", "AssetGroup"): "The relation between the Geofence and the AssetGroup collection is many to many. Geofence.asset_group_assignments.group_id = AssetGroup._id",
+
+        ("AlertRule", "AlertHistory"): "The relation between the AlertRule and the AlertHistory collection is one to many. For each alert rule there may be many log records when the rule triggers. AlertHistory.alert_info.alert_rule_id = AlertRule._id",
+        ("AlertRule", "AssetGroup"): "The relation between the AlertRule and the AssetGroup collection is many to many. AlertRule.assigned_asset_groups.group_id = AssetGroup._id",
+        ("AlertRule", "Asset"): "The relation between the AlertRule and the Asset collection is many to many. AlertRule.assigned_assets.asset_id = Asset._id",
+
+        ("AssetGroup", "Asset"): "The relation between the AssetGroup and the Asset collection is many to many. AssetGroup.assigned_assets.asset_id = Asset._id",
+
+        ("Device", "AvlRecord"): "The relation between the Device and the AvlRecord collection is one to many. Device.imei = AvlRecord.imei & Device.device_id = AvlRecord.device_id",
     }
     
     rules = []

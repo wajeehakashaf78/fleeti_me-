@@ -12,8 +12,22 @@ Fields:
 - sensors.direction_angle: int
 - sensors.engine_percent_load: int
 - sensors.fuel_level_litters: int
+- sensors.fuel_level_percentage: int
 - sensors.crash_detection: int
-- sensors.weight_value: float
-- sensors.temperature_value_s: string
-- sensors.humidity_value: int
-
+- sensors.weight_value_1: float
+- sensors.weight_value_2: float
+- sensors.weight_value_3: float
+- sensors.weight_value_4: float
+- sensors.temperature_value_1: float
+- sensors.temperature_value_2: float
+- sensors.temperature_value_3: float
+- sensors.temperature_value_4: float
+- sensors.humidity_value_1: int
+- sensors.humidity_value_2: int
+- sensors.humidity_value_3: int
+- sensors.humidity_value_4: int
+- sensors.door_value_1: int
+- sensors.door_value_2: int
+- sensors.door_value_3: int
+- sensors.door_value_4: int
+- (Note: each sensor has a matching boolean "<name>_applied" flag; a reading is valid only when its _applied flag is true.)

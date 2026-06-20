@@ -1,9 +1,19 @@
 Collection: SystemAlertRule
 Fields:
 - _id: uuid
-- event_type: string
+- event_type: string (idling, driving_without_gps, harsh_acceleration, harsh_braking, harsh_cornering, sharp_turn, sudden_stop, over_speeding, zigzag_driving, frequent_start_stop, long_continuous_driving, driving_with_low_battery)
 - is_enabled: bool
-- time_interval: int
+- sub_tenant_id: string
 - created_by: string
 - created_at: BSON Date
-
+- time_interval: int (threshold; present for idling/over_speeding/frequent_start_stop/long_continuous_driving/driving_with_low_battery)
+- speed_limit: int (over_speeding)
+- delta_speed: int (harsh_acceleration/harsh_braking/sudden_stop)
+- delta_time: int (harsh events)
+- speed: int (harsh_cornering/sharp_turn/zigzag_driving/frequent_start_stop)
+- delta_direction_angle: int (harsh_cornering/sharp_turn/zigzag_driving)
+- satellites: int (driving_without_gps)
+- zigzag_count: int (zigzag_driving)
+- oscillations: int (frequent_start_stop)
+- battery_level_perc: int (driving_with_low_battery)
+- (Note: only the threshold fields relevant to each event_type are present per document.)

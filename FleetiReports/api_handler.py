@@ -88,66 +88,50 @@ class APIHandler:
         Returns:
             API response data
         """
+        report_label = report_type or payload.get("Type") or endpoint
         try:
             url = f"{self.base_url}{endpoint}"
-            
-            if request_only_log:
-                print("\n--- Report Request ---")
-                print(f"Type: {report_type or endpoint}")
-                print(f"URL: {url}")
-                print(f"Payload: {payload}")
-            else:
-                print(f"\n--- External API Call ---")
-                print(f"URL: {url}")
-                print(f"Method: POST")
-                print(f"Headers: Authorization: Bearer {self.access_token[:20]}...")
-                print(f"Payload: {payload}")
-            
+
+            logger.info("📡 report API request | %s | POST %s | payload=%s",
+                        report_label, url, str(payload)[:1000])
+
             async with httpx.AsyncClient(timeout=self.timeout, verify=self.http_verify) as client:
                 response = await client.post(
                     url,
                     json=payload,
                     headers=self._get_headers()
                 )
-                
+
                 response.raise_for_status()
-                
+
                 response_data = response.json()
-                
-                if not request_only_log:
-                    print(f"\n--- API Response ---")
-                    print(f"Status Code: {response.status_code}")
-                    print(f"Response Data: {response_data}")
-                
+
+                logger.info("📡 report API response | %s | HTTP %s | success",
+                            report_label, response.status_code)
+
                 return {
                     "success": True,
                     "status_code": response.status_code,
                     "data": response_data
                 }
-                
+
         except httpx.HTTPStatusError as e:
-            if not request_only_log:
-                print(f"\n--- API Error ---")
-                print(f"HTTP Status Error: {e.response.status_code}")
-                print(f"Response: {e.response.text}")
+            logger.warning("📡 report API error | %s | HTTP %s | %s",
+                           report_label, e.response.status_code, str(e)[:300])
             return {
                 "success": False,
                 "error": f"HTTP error: {e.response.status_code}",
                 "details": str(e)
             }
         except httpx.RequestError as e:
-            if not request_only_log:
-                print(f"\n--- API Error ---")
-                print(f"Request Error: {str(e)}")
+            logger.warning("📡 report API error | %s | request error | %s", report_label, str(e)[:300])
             return {
                 "success": False,
                 "error": "Request error",
                 "details": str(e)
             }
         except Exception as e:
-            if not request_only_log:
-                print(f"\n--- API Error ---")
-                print(f"Unexpected Error: {str(e)}")
+            logger.warning("📡 report API error | %s | unexpected | %s", report_label, str(e)[:300])
             return {
                 "success": False,
                 "error": "Unexpected error",

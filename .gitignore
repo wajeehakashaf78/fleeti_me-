@@ -7,7 +7,7 @@ ENV/
 
 RasaFleeti/venv3.10/
 
-
+db_schema_updates.md
 RasaFleeti/actions/actions2.py
 RasaFleeti/actions/actions1.py
 
@@ -23,6 +23,9 @@ __pycache__/
 frontend/
 # Text files
 
+docs/
+
+
 # Environment variables
 .env
 .env.local
@@ -30,6 +33,8 @@ frontend/
 # Output directories
 output/
 output_json/
+# Generated XLSX exports (auto-deleted after a few hours)
+exports/
 # **/output/
 # **/output_json/
 
@@ -53,6 +58,7 @@ Thumbs.db
 
 # Logs
 *.log
+logs/
 
 # Distribution / packaging
 .Python

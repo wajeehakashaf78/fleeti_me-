@@ -34,6 +34,14 @@ def _active_asset_match() -> Dict[str, Any]:
     }
 
 
+def _ids_preview(ids: List[str], limit: int = 20) -> Any:
+    """Compact id list for logs: full when short, truncated with a count otherwise."""
+    ids = list(ids or [])
+    if len(ids) <= limit:
+        return ids
+    return ids[:limit] + [f"...(+{len(ids) - limit} more)"]
+
+
 class MongoDBHandler:
     """Handles MongoDB operations"""
     
@@ -42,10 +50,12 @@ class MongoDBHandler:
         self.client = MongoClient(settings.MONGO_URI)
 
     def _normalize_plate(self, plate: str) -> str:
-        """Normalize plate by removing separators and uppercasing."""
+        """Normalize a plate the SAME way the DB does: strip only separators
+        (space/-/_) and uppercase. Non-ASCII letters (e.g. Arabic) are KEPT, so
+        plates like '7850 ل ط ا' normalize to '7850لطا' and match the stored value."""
         if not plate:
             return ""
-        return re.sub(r"[^A-Za-z0-9]", "", plate).upper()
+        return re.sub(r"[\s\-_]", "", plate).upper()
 
     def _build_plate_variants(self, plate_numbers: List[str]) -> List[str]:
         """
@@ -62,7 +72,8 @@ class MongoDBHandler:
             if normalized:
                 variants.add(normalized)
 
-            tokens = [t.upper() for t in re.findall(r"[A-Za-z0-9]+", plate)]
+            # Split on separators only (keep non-ASCII tokens like Arabic letters).
+            tokens = [t.upper() for t in re.split(r"[\s\-_]+", plate.strip()) if t]
             if len(tokens) >= 2:
                 forward = "".join(tokens)
                 reverse = "".join(reversed(tokens))
@@ -187,24 +198,29 @@ class MongoDBHandler:
             print(f"Results: {results}")
 
             asset_ids = self._unique_strings([r["_id"] for r in results])
-            
+
+            logger.info(
+                "🔎 resolve assets by PLATE | db=%s | plates=%s | all=%s | normalized=%s | active-only | matched=%d | asset_ids=%s",
+                db_name, plate_numbers, all_assets_requested, normalized_variants,
+                len(results), _ids_preview(asset_ids),
+            )
+
             return {
                 "success": True,
                 "count": len(results),
                 "assets": results,
                 "asset_ids": asset_ids
             }
-            
+
         except PyMongoError as e:
-            print(f"\n--- MongoDB Query Error ---")
-            print(f"Error: {str(e)}")
+            logger.warning("🔎 resolve assets by PLATE FAILED | plates=%s | %s", plate_numbers, str(e)[:300])
             return {
                 "success": False,
                 "error": f"MongoDB error: {str(e)}",
                 "assets": [],
                 "asset_ids": []
             }
-    
+
     def get_asset_ids_by_group_names(
         self, 
         db_name: str, 
@@ -244,9 +260,9 @@ class MongoDBHandler:
                 {
                     "$lookup": {
                         "from": "Asset",
-                        "let": {"_aid": "$assigned_assets.asset_id"},
+                        "let": {"aid": "$assigned_assets.asset_id"},
                         "pipeline": [
-                            {"$match": {"$expr": {"$eq": ["$_id", "$$_aid"]}, **_active_asset_match()}},
+                            {"$match": {"$expr": {"$eq": ["$_id", "$$aid"]}, **_active_asset_match()}},
                             {"$project": {"_id": 1}},
                         ],
                         "as": "_active_asset",
@@ -284,7 +300,12 @@ class MongoDBHandler:
 
             asset_ids = self._unique_strings([r["asset_id"] for r in results])
             group_ids = self._unique_strings([r["group_id"] for r in results if r.get("group_id") is not None])
-            
+
+            logger.info(
+                "🔎 resolve assets by GROUP | db=%s | groups=%s | all=%s | matched_groups=%d | active-only | matched_assets=%d | asset_ids=%s",
+                db_name, group_names, all_groups_requested, len(group_ids), len(results), _ids_preview(asset_ids),
+            )
+
             return {
                 "success": True,
                 "count": len(results),
@@ -292,17 +313,16 @@ class MongoDBHandler:
                 "asset_ids": asset_ids,
                 "group_ids": group_ids
             }
-            
+
         except PyMongoError as e:
-            print(f"\n--- MongoDB Query Error ---")
-            print(f"Error: {str(e)}")
+            logger.warning("🔎 resolve assets by GROUP FAILED | groups=%s | %s", group_names, str(e)[:300])
             return {
                 "success": False,
                 "error": f"MongoDB error: {str(e)}",
                 "assets": [],
                 "asset_ids": []
             }
-    
+
     def get_driver_ids_by_names(
         self, 
         db_name: str, 
@@ -393,17 +413,21 @@ class MongoDBHandler:
             print(f"Results: {results}")
 
             driver_ids = self._unique_strings([r["driver_id"] for r in results])
-            
+
+            logger.info(
+                "🔎 resolve drivers by NAME | db=%s | names=%s | all=%s | matched=%d | driver_ids=%s",
+                db_name, driver_names, all_drivers_requested, len(results), _ids_preview(driver_ids),
+            )
+
             return {
                 "success": True,
                 "count": len(results),
                 "drivers": results,
                 "driver_ids": driver_ids
             }
-            
+
         except PyMongoError as e:
-            print(f"\n--- MongoDB Query Error ---")
-            print(f"Error: {str(e)}")
+            logger.warning("🔎 resolve drivers by NAME FAILED | names=%s | %s", driver_names, str(e)[:300])
             return {
                 "success": False,
                 "error": f"MongoDB error: {str(e)}",

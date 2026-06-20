@@ -1,19 +1,22 @@
 Collection: AlertHistory
 Fields:
 - _id: uuid
-- alert_info.severity: string
-- alert_info.alert_message: string
-- alert_info.status: string
+- alert_info.type: string ("systemAlert" = driving-behavior/system events | "alertRule" = user AlertRule triggers | "geofencealert" = geofence entry/exit)
+- alert_info.alert_message: string (the event/alert name, e.g. "long_continuous_driving", "over_speeding", "out")
+- alert_info.severity: string (Critical/High/Medium/Low/Warning)
+- alert_info.status: string (Active/Inactive/Resolved)
 - alert_info.priority: string
-- alert_info.avl_packet_id: string
-- alert_info.alert_rule_id: string
-- alert_info.type: string
+- alert_info.alert_rule_id: string (links to AlertRule._id; for geofence alerts the rule references the geofence)
+- alert_info.avl_packet_id: string (links to AvlRecord._id - the packet that triggered it)
 - alert_info.resolution: string
+- alert_info.resolved_by: string
+- alert_info.action_performed_at: BSON Date|null
 - alert_info.location.address: string|null
 - alert_info.location.latitude: float
 - alert_info.location.longitude: float
-- alert_info.resolved_by: string
-- alert_info.action_performed_at: BSON Date
-- asset_info._id: string
-- created_at: BSON Date
-
+- asset_info._id: string (links to Asset._id - join for asset details/plate)
+- sub_tenant_id: string
+- is_processed: bool
+- is_notification_sent: bool
+- created_at: BSON Date (when the alert occurred - use for time-based queries)
+- updated_at: BSON Date|null

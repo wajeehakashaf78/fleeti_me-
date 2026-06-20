@@ -117,11 +117,11 @@ class FleetiHistorySaver:
         return (doc or {}).get("openai_conversation_id")
 
     def set_conversation_id(self, conversation_id: str) -> None:
-        """Persist the OpenAI conversation id on the session document (upsert)."""
+        """Persist the OpenAI conversation id and reset the turn counter (new conversation)."""
         self.db[self.collection_name].update_one(
             {"sessionId": self.session_id},
             {
-                "$set": {"openai_conversation_id": conversation_id},
+                "$set": {"openai_conversation_id": conversation_id, "conversation_turn_count": 0},
                 "$setOnInsert": {
                     "sessionId": self.session_id,
                     "sub_tenant_id": self.sub_tenant_id,
@@ -129,6 +129,13 @@ class FleetiHistorySaver:
                 },
             },
             upsert=True,
+        )
+
+    def set_conversation_turn_count(self, count: int) -> None:
+        """Persist how many turns have run against the current OpenAI conversation."""
+        self.db[self.collection_name].update_one(
+            {"sessionId": self.session_id},
+            {"$set": {"conversation_turn_count": int(count)}},
         )
 
     def save_general_message(self, user_input: str, llm_response: str) -> Dict[str, Any]:

@@ -11,6 +11,7 @@ import os
 import json
 import asyncio
 import logging
+from datetime import datetime
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
@@ -23,6 +24,7 @@ except Exception:  # pragma: no cover
 
 from FleetiAgent.prompts import build_orchestrator_instructions
 from FleetiAgent.tools import TOOL_DEFINITIONS, ToolContext, execute_tool
+from FleetiCommon import parse_user_utc_offset
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -73,6 +75,7 @@ class AgentResult:
     selected_collections: List[str] = field(default_factory=list)
     error: bool = False
     conversation_invalid: bool = False  # endpoint should re-seed a fresh conversation and retry
+    export_url: Optional[str] = None  # download link when the model exported results to xlsx
 
 
 class FleetiAgent:
@@ -81,7 +84,7 @@ class FleetiAgent:
         self.client = OpenAI(api_key=api_key) if (api_key and OpenAI is not None) else None
         # Full GPT-5 orchestrator. Falls back to OPENAI_MODEL so it picks up the
         # account's configured model (e.g. gpt-5.2) even if the dedicated var is unset.
-        self.model = os.getenv("FLEETI_ORCHESTRATOR_MODEL") or os.getenv("OPENAI_MODEL") or "gpt-5"
+        self.model = os.getenv("FLEETI_ORCHESTRATOR_MODEL") or "gpt-5.2"
         # "low" by default to keep reasoning-token cost down; override via FLEETI_REASONING_EFFORT.
         self.reasoning_effort = os.getenv("FLEETI_REASONING_EFFORT") or "low"
 
@@ -120,10 +123,25 @@ class FleetiAgent:
             authorization=authorization,
             time_zone=time_zone,
             remove_sub_tenant_match=remove_sub_tenant_match,
+            user_question=user_message,
         )
 
-        # Only the new user message is sent; the conversation supplies prior context.
-        input_items: List[Dict[str, Any]] = [{"role": "user", "content": user_message}]
+        logger.info(
+            "▶ turn start | conv=%s | tz=%s | q=%r",
+            conversation_id, time_zone or "UTC", (user_message or "")[:200],
+        )
+
+        # Inject the current date/time in the USER'S timezone per-turn. Kept out of the cached
+        # instructions prefix (so caching still hits); only the new user message + this note are new.
+        now_user = datetime.now(parse_user_utc_offset(time_zone))
+        time_note = (
+            f"Current date & time: {now_user.strftime('%Y-%m-%d %H:%M:%S')} "
+            f"(timezone: {time_zone or 'UTC'})"
+        )
+        input_items: List[Dict[str, Any]] = [
+            {"role": "developer", "content": time_note},
+            {"role": "user", "content": user_message},
+        ]
 
         # Per-turn token accounting (measurement only — no behavior change).
         usage = {"calls": 0, "input": 0, "cached": 0, "output": 0, "reasoning": 0}
@@ -194,6 +212,7 @@ class FleetiAgent:
                 last_fleet_query=ctx.last_fleet_query,
                 last_fleet_rows=ctx.last_fleet_rows,
                 selected_collections=ctx.selected_collections,
+                export_url=ctx.export_url,
             )
         except Exception as exc:  # noqa: BLE001 - endpoint converts to a safe user message
             if _is_conversation_error(exc):

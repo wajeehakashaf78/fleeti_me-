@@ -71,8 +71,8 @@ _DEFAULT_SECTIONS: Dict[str, List[str]] = {
     "Trip": ["Trip_base"],
     "AlertRule": ["AlertRule_base"],
     "AlertHistory": ["AlertHistory_base"],
-    "Events": ["Events_base"],
     "Geofence": ["Geofence_base"],
+    "AssetGroup": ["AssetGroup_base"],
     "Device": ["Device_base"],
     "DailyAnalytics": ["DailyAnalytics_base"],
     "SystemAlertRule": ["SystemAlertRule_base"],
@@ -93,7 +93,7 @@ CATALOG: List[Dict[str, Any]] = [
             "asset_base": "status, availability, created_at, expiry_date",
             "asset_details_base": "plate_number, plate_type, vehicle_type, fleet_type, make, model, VIN, fuel_type, odometer",
             "asset_details_document_status_flags": "insurance/istimara/mvpi/operation-card/barrier-cert expiry & status",
-            "asset_device_details": "device_details.imei, group_id, group_name (link to Device)",
+            "asset_device_details": "device_details.imei (->Device.imei), group_id (->AssetGroup._id), group_name, device_name",
         },
     },
     {
@@ -132,39 +132,43 @@ CATALOG: List[Dict[str, Any]] = [
         },
     },
     {
-        "collection": "Events",
-        "purpose": "Driving-behavior event logs AND SystemAlertRule trigger logs.",
-        "ids": "device_context.asset_id (->Asset._id); device_context.driver_info.id (->Driver._id); event_type",
-        "section_notes": {
-            "Events_base": "event_type, timestamp, location, speed, duration, severity",
-        },
-    },
-    {
         "collection": "AlertHistory",
-        "purpose": "Logs for AlertRule triggers AND geofence events (no sub_tenant_id of its own).",
-        "ids": "alert_info.alert_rule_id (->AlertRule._id); alert_info.geofence_id (->Geofence._id); device_context.asset_id",
+        "purpose": "ALL alert/event LOGS: driving-behavior/system events, user AlertRule triggers, AND geofence entry/exit. (This is where idling, harsh braking, over-speeding, geofence events, etc. live.)",
+        "ids": "asset_info._id (->Asset._id); alert_info.alert_rule_id (->AlertRule._id); alert_info.avl_packet_id (->AvlRecord._id)",
         "section_notes": {
-            "AlertHistory_base": "alert_info.alert_type ('geofence' vs 'alertRule'), name, severity, status, created_at, location",
+            "AlertHistory_base": "alert_info.type ('systemAlert' | 'alertRule' | 'geofencealert'), alert_info.alert_message (event/alert name), severity, status, created_at (event time), location",
         },
     },
     {
         "collection": "AlertRule",
-        "purpose": "Alert rule definitions/config only (trigger logs live in AlertHistory).",
-        "ids": "_id; name",
+        "purpose": "User alert-rule DEFINITIONS/config (trigger logs live in AlertHistory). system_alert_rule=true marks system rules.",
+        "ids": "_id (->AlertHistory.alert_info.alert_rule_id); basic_info.rule_name",
         "section_notes": {
-            "AlertRule_base": "name, description, severity, enabled status",
-            "AlertRule_condition": "thresholds & trigger criteria",
-            "AlertRule_assigned_assets": "vehicles monitored by the rule",
+            "AlertRule_base": "status, priority, system_alert_rule, basic_info.rule_name/description/severity/enable_rule",
+            "AlertRule_condition": "value/event/logic/system based conditions & thresholds",
+            "AlertRule_assigned_assets": "assigned_assets[].asset_id + assigned_asset_groups[].group_id monitored by the rule",
         },
     },
     {
         "collection": "Geofence",
-        "purpose": "Geofence definitions/config only (geofence events live in AlertHistory).",
-        "ids": "_id; name; asset_assignments[].asset_id (->Asset._id)",
+        "purpose": "Geofence DEFINITIONS/config (geofence event logs live in AlertHistory). status Active/Inactive.",
+        "ids": "_id; name; asset_assignments[].asset_id (->Asset._id); asset_group_assignments[].group_id (->AssetGroup._id)",
         "section_notes": {
-            "Geofence_base": "name, boundary/config",
-            "Geofence_asset_assignment": "assets assigned to the geofence",
+            "Geofence_base": "name, type (Polygon/Circle), status, coordinates, radius",
+            "Geofence_asset_assignment": "assets & asset-groups assigned to the geofence (ids)",
         },
+    },
+    {
+        "collection": "SystemAlertRule",
+        "purpose": "System event DEFINITIONS/thresholds (idling, harsh_*, over_speeding, etc.). The actual event logs live in AlertHistory (alert_info.type='systemAlert').",
+        "ids": "_id; event_type",
+        "section_notes": {"SystemAlertRule_base": "event_type + per-event thresholds (time_interval, speed_limit, delta_*, etc.), is_enabled"},
+    },
+    {
+        "collection": "AssetGroup",
+        "purpose": "Named groups of assets (used for batch config & group reports).",
+        "ids": "_id (group id); name; assigned_assets[].asset_id (->Asset._id); parent_group_id (->AssetGroup._id)",
+        "section_notes": {"AssetGroup_base": "name, description, is_active, assigned_assets[].asset_id"},
     },
     {
         "collection": "Device",
@@ -178,18 +182,17 @@ CATALOG: List[Dict[str, Any]] = [
         "ids": "asset_id (->Asset._id); driver_id (->Driver._id); timestamp (the day)",
         "section_notes": {"DailyAnalytics_base": "daily distance (meters), duration, idle, over_speeding, scores"},
     },
-    {
-        "collection": "SystemAlertRule",
-        "purpose": "System-level alert rule definitions only (trigger logs live in Events).",
-        "ids": "event_type (->Events.event_type)",
-        "section_notes": {"SystemAlertRule_base": "predefined system alert rules"},
-    },
 ]
 
 _DISAMBIGUATIONS = """DISAMBIGUATIONS:
 - Latest/current telemetry (location/speed/ignition/movement) -> AvlRecordLatest (one latest doc per asset). Historical/at-a-past-time telemetry -> AvlRecord. (Both share the AvlRecord schema.)
-- Driving-behavior events (Idling, Harsh Acceleration/Braking/Cornering, Sharp Turn, Sudden Stop, Over Speeding, Zigzag, Frequent Start/Stop, Long Continuous Driving, Driving Without GPS Lock, low-battery driving) -> Events. Events is also where SystemAlertRule trigger logs live.
-- AlertRule trigger logs AND geofence event logs -> AlertHistory (alert_info.alert_type = 'geofence' vs 'alertRule'). AlertRule/Geofence/SystemAlertRule hold definitions only.
+- ALL alert & event LOGS live in AlertHistory. Filter by alert_info.type:
+  * 'systemAlert' = driving-behavior/system events (Idling, Harsh Acceleration/Braking/Cornering, Sharp Turn, Sudden Stop, Over Speeding, Zigzag, Frequent Start/Stop, Long Continuous Driving, Driving Without GPS, low-battery driving) — the event name is in alert_info.alert_message.
+  * 'alertRule' = user-defined AlertRule triggers.
+  * 'geofencealert' = geofence entry/exit events.
+- DEFINITIONS (not logs) live separately: user rules -> AlertRule; system event thresholds -> SystemAlertRule; geofence zones -> Geofence.
+- AlertHistory links to the asset via asset_info._id (-> Asset._id) and to the rule via alert_info.alert_rule_id (-> AlertRule._id).
+- AssetGroup = named sets of assets; link AssetGroup.assigned_assets[].asset_id -> Asset._id.
 - Driver of a vehicle -> Driver.asset_assignments (use the latest assignment).
 - Per-day aggregates -> DailyAnalytics; per-trip -> Trip."""
 
@@ -216,13 +219,20 @@ def build_menu() -> str:
 # Invariant query RULES (deduped from prompt_blueprint.py)
 # ================================
 RULES = """QUERY RULES:
-- Plate numbers: match details.plate_number with case-insensitive exact regex {"$regex":"^<plate>$","$options":"i"}; never match _id/asset_id. Match other string identifiers (geofence/alert/rule names) the same ^...$ /i way. For Events.event_type use a flexible regex, e.g. {"$regex":"harsh[-_\\\\s]*braking|harshbraking","$options":"i"}.
-- Dates: emit ALL dates as Extended JSON {"$date":"YYYY-MM-DDTHH:MM:SSZ"} — never ISODate(...) or a bare string. Resolve relative dates against the current UTC datetime from the system prompt.
+- Plate numbers: match details.plate_number with case-insensitive exact regex {"$regex":"^<plate>$","$options":"i"}; never match _id/asset_id. Match other string identifiers (geofence/alert/rule names) the same ^...$ /i way. For event/alert names match alert_info.alert_message in AlertHistory with a flexible regex, e.g. {"$regex":"harsh[-_\\\\s]*braking|harshbraking","$options":"i"}, and set alert_info.type ('systemAlert'|'alertRule'|'geofencealert') when the kind is known.
+- Dates: emit ALL dates as Extended JSON {"$date":"YYYY-MM-DDTHH:MM:SSZ"} — never ISODate(...) or a bare string. Resolve relative dates/times against the per-turn "Current date & time" (user's timezone).
+- TIMEZONE — emit the LOCAL wall-clock time the user means (in THEIR timezone) and do NOT convert to UTC yourself; the server converts user-local times to UTC before querying. Example: user in UTC+5 asks "from 2pm to 4pm" -> emit {"$date":"...T14:00:00Z"} and {"$date":"...T16:00:00Z"} (the server turns these into 09:00–11:00 UTC). A whole day "on 2026-06-20" -> 00:00:00 to 23:59:59 of that local date. (Relative ranges built with $$NOW are already UTC — do not adjust those.)
 - Time intent: latest/last/current -> $sort the time field desc + $limit 1; oldest/first -> asc + $limit 1; an exact time -> match a +/-5 minute window and pick the closest record. Add $sort/$limit only when ordering or a single/top-N result is implied; never for "all".
+- AvlRecord / AvlRecordLatest: ALWAYS include is_processed: true in the match — ignore unprocessed packets.
+- Reporting / connectivity status of a vehicle (asset/device), based on its AvlRecordLatest packet (one latest packet per asset, is_processed: true):
+  * REPORTING = its latest packet timestamp is within the last 12 hours.
+  * NOT REPORTING = it has a latest packet, but older than 12 hours.
+  * NOT CONNECTED = it has no AvlRecordLatest packet at all.
+  Compute the 12-hour cutoff with $$NOW: {"$dateSubtract":{"startDate":"$$NOW","unit":"hour","amount":12}}. For NOT CONNECTED, start from Asset, $lookup AvlRecordLatest, and keep assets whose joined array is empty.
 - Joins: $lookup only to reach fields in a DIFFERENT collection; never join a collection to itself. Use the localField/foreignField from the get_query_context "joins" output.
 - Projection: always exclude _id ("_id":0) and never project any *_id field; use full paths, e.g. {"plate_number":"$details.plate_number"}.
-- Tenant: do NOT add sub_tenant_id yourself — the server injects it. If the starting collection has no sub_tenant_id of its own (AlertHistory, Trip, DailyAnalytics), include a $lookup into a tenant-aware collection (Asset, AvlRecord, Driver, Device, Events, Geofence, AlertRule) so the server can scope via the join.
-- Active vehicles only: every Asset access (any vehicle/plate question) is automatically restricted server-side to ACTIVE vehicles (device_availability "AssignedToDevice", status "Active", expiry_date in the future/missing/null). Treat "vehicles" as active vehicles; do NOT add these conditions yourself.
+- Tenant: do NOT add sub_tenant_id yourself — the server injects it. If the starting collection has no sub_tenant_id of its own (Trip, DailyAnalytics), include a $lookup into a tenant-aware collection (Asset, AvlRecord, AlertHistory, AlertRule, AssetGroup, Driver, Device, Geofence) so the server can scope via the join.
+- Active vehicles only: every Asset access (any vehicle/plate question) is automatically restricted server-side to ACTIVE vehicles (device_availability "AssignedToDevice", status "Active", expiry_date in the future/missing/null). Treat "vehicles" as active vehicles; do NOT add these conditions yourself. Records that link to a NON-active vehicle (e.g. alerts/events/trips whose vehicle isn't active) are EXCLUDED — the server inner-joins Asset, so such rows are dropped entirely (you won't see blank-plate orphan rows).
 - Data-source preference (choose silently; never ask the user which source to use):
   1. OVERALL / all-time entity KPIs come from the entity's OWN collection. For a driver's overall scores/metrics (safety score, behavior score, performance rating, all-time average speed, total trips/distance/hours, harsh-event counts) read directly from Driver.driver_analytics / Driver.analytics / Driver.behavior / Driver.performance — do NOT recompute them from Trip or DailyAnalytics.
   2. For a SPECIFIC TIME RANGE (today, yesterday, last 7 days, a date range) aggregate from Trip (per-trip rows: avg_speed, max_speed, distance_covered, duration, idle_time, safety/behaviour scores) or DailyAnalytics (per-day rows), whichever fits the metric.
@@ -238,13 +248,13 @@ EXAMPLES: List[Dict[str, Any]] = [
         "tags": ["location", "telemetry", "historical", "asset", "time-exact"],
         "collections": ["Asset", "AvlRecord"],
         "question": "What was the location of plate 304 XYA at 4:35 PM on Oct 10, 2025?",
-        "query": 'db.Asset.aggregate([{"$match":{"details.plate_number":{"$regex":"^304 XYA$","$options":"i"}}},{"$lookup":{"from":"AvlRecord","let":{"assetImei":"$device_details.imei","targetTime":{"$date":"2025-10-10T16:35:00Z"}},"pipeline":[{"$match":{"$expr":{"$eq":["$imei","$$assetImei"]}}},{"$addFields":{"time_diff":{"$abs":{"$subtract":["$timestamp","$$targetTime"]}}}},{"$sort":{"time_diff":1}},{"$limit":1},{"$project":{"_id":0,"location":1,"timestamp":1,"speed":1,"ignition_status":1}}],"as":"closest"}},{"$unwind":"$closest"},{"$project":{"_id":0,"plate_number":"$details.plate_number","location":"$closest.location","timestamp":"$closest.timestamp","speed":"$closest.speed"}}])',
+        "query": 'db.Asset.aggregate([{"$match":{"details.plate_number":{"$regex":"^304 XYA$","$options":"i"}}},{"$lookup":{"from":"AvlRecord","let":{"assetImei":"$device_details.imei","targetTime":{"$date":"2025-10-10T16:35:00Z"}},"pipeline":[{"$match":{"$expr":{"$eq":["$imei","$$assetImei"]},"is_processed":true}},{"$addFields":{"time_diff":{"$abs":{"$subtract":["$timestamp","$$targetTime"]}}}},{"$sort":{"time_diff":1}},{"$limit":1},{"$project":{"_id":0,"location":1,"timestamp":1,"speed":1,"ignition_status":1}}],"as":"closest"}},{"$unwind":"$closest"},{"$project":{"_id":0,"plate_number":"$details.plate_number","location":"$closest.location","timestamp":"$closest.timestamp","speed":"$closest.speed"}}])',
     },
     {
         "tags": ["location", "telemetry", "latest", "current", "moving", "count"],
         "collections": ["Asset", "AvlRecord"],
         "question": "What is the latest location of plate 123 ABC?",
-        "query": 'db.Asset.aggregate([{"$match":{"details.plate_number":{"$regex":"^123 ABC$","$options":"i"}}},{"$lookup":{"from":"AvlRecordLatest","localField":"_id","foreignField":"device_context.asset_id","as":"latest"}},{"$unwind":"$latest"},{"$project":{"_id":0,"plate_number":"$details.plate_number","location":"$latest.location","speed":"$latest.speed","ignition_status":"$latest.ignition_status","timestamp":"$latest.timestamp"}}])',
+        "query": 'db.Asset.aggregate([{"$match":{"details.plate_number":{"$regex":"^123 ABC$","$options":"i"}}},{"$lookup":{"from":"AvlRecordLatest","let":{"aid":"$_id"},"pipeline":[{"$match":{"$expr":{"$eq":["$device_context.asset_id","$$aid"]},"is_processed":true}}],"as":"latest"}},{"$unwind":"$latest"},{"$project":{"_id":0,"plate_number":"$details.plate_number","location":"$latest.location","speed":"$latest.speed","ignition_status":"$latest.ignition_status","timestamp":"$latest.timestamp"}}])',
     },
     {
         "tags": ["trips", "asset", "distance"],
@@ -259,16 +269,16 @@ EXAMPLES: List[Dict[str, Any]] = [
         "query": 'db.Asset.aggregate([{"$match":{"details.plate_number":{"$regex":"^123 ABC$","$options":"i"}}},{"$project":{"_id":0,"plate_number":"$details.plate_number","plate_type":"$details.plate_type"}}])',
     },
     {
-        "tags": ["events", "idling", "asset", "time-range", "behavior"],
-        "collections": ["Asset", "Events"],
+        "tags": ["events", "alerts", "idling", "alerthistory", "systemalert", "asset", "time-range", "behavior"],
+        "collections": ["Asset", "AlertHistory"],
         "question": "List Idling events for plate 123 ABC yesterday.",
-        "query": 'db.Asset.aggregate([{"$match":{"details.plate_number":{"$regex":"^123 ABC$","$options":"i"}}},{"$lookup":{"from":"Events","localField":"_id","foreignField":"device_context.asset_id","as":"events"}},{"$unwind":"$events"},{"$match":{"events.event_type":{"$regex":"^idling$","$options":"i"},"events.timestamp":{"$gte":{"$date":"2026-01-01T00:00:00Z"},"$lte":{"$date":"2026-01-02T00:00:00Z"}}}},{"$project":{"_id":0,"plate_number":"$details.plate_number","event_type":"$events.event_type","timestamp":"$events.timestamp","location":"$events.location"}}])',
+        "query": 'db.Asset.aggregate([{"$match":{"details.plate_number":{"$regex":"^123 ABC$","$options":"i"}}},{"$lookup":{"from":"AlertHistory","let":{"aid":"$_id"},"pipeline":[{"$match":{"$expr":{"$eq":["$asset_info._id","$$aid"]},"alert_info.type":"systemAlert","alert_info.alert_message":{"$regex":"idling","$options":"i"},"created_at":{"$gte":{"$date":"2026-01-01T00:00:00Z"},"$lte":{"$date":"2026-01-02T00:00:00Z"}}}}],"as":"alerts"}},{"$unwind":"$alerts"},{"$project":{"_id":0,"plate_number":"$details.plate_number","alert":"$alerts.alert_info.alert_message","severity":"$alerts.alert_info.severity","timestamp":"$alerts.created_at","location":"$alerts.alert_info.location"}}])',
     },
     {
-        "tags": ["events", "harshbraking", "behavior"],
-        "collections": ["Events"],
+        "tags": ["events", "alerts", "harshbraking", "behavior", "systemalert", "alerthistory"],
+        "collections": ["AlertHistory"],
         "question": "Show all harsh braking events.",
-        "query": 'db.Events.aggregate([{"$match":{"event_type":{"$regex":"harsh[-_\\\\s]*braking|harshbraking","$options":"i"}}},{"$project":{"_id":0,"event_type":1,"timestamp":1,"location":1,"speed":1,"duration":1}}])',
+        "query": 'db.AlertHistory.aggregate([{"$match":{"alert_info.type":"systemAlert","alert_info.alert_message":{"$regex":"harsh[-_\\\\s]*braking|harshbraking","$options":"i"}}},{"$project":{"_id":0,"alert":"$alert_info.alert_message","severity":"$alert_info.severity","timestamp":"$created_at","location":"$alert_info.location"}}])',
     },
     {
         "tags": ["geofence", "asset", "assignment"],
@@ -277,16 +287,28 @@ EXAMPLES: List[Dict[str, Any]] = [
         "query": 'db.Geofence.aggregate([{"$match":{"name":{"$regex":"^Geofence A$","$options":"i"}}},{"$lookup":{"from":"Asset","localField":"asset_assignments.asset_id","foreignField":"_id","as":"asset"}},{"$unwind":"$asset"},{"$project":{"_id":0,"geofence":"$name","plate_number":"$asset.details.plate_number"}}])',
     },
     {
-        "tags": ["geofence", "alerts", "alerthistory", "asset", "events"],
+        "tags": ["geofence", "alerts", "alerthistory", "asset", "geofencealert"],
         "collections": ["Asset", "AlertHistory"],
         "question": "Show geofence alerts for plate 123 ABC.",
-        "query": 'db.Asset.aggregate([{"$match":{"details.plate_number":{"$regex":"^123 ABC$","$options":"i"}}},{"$lookup":{"from":"AlertHistory","localField":"_id","foreignField":"device_context.asset_id","as":"alerts"}},{"$unwind":"$alerts"},{"$match":{"alerts.alert_info.alert_type":"geofence"}},{"$project":{"_id":0,"plate_number":"$details.plate_number","geofence_name":"$alerts.alert_info.name","timestamp":"$alerts.created_at","location":"$alerts.alert_info.location","status":"$alerts.alert_info.status"}}])',
+        "query": 'db.Asset.aggregate([{"$match":{"details.plate_number":{"$regex":"^123 ABC$","$options":"i"}}},{"$lookup":{"from":"AlertHistory","let":{"aid":"$_id"},"pipeline":[{"$match":{"$expr":{"$eq":["$asset_info._id","$$aid"]},"alert_info.type":"geofencealert"}}],"as":"alerts"}},{"$unwind":"$alerts"},{"$project":{"_id":0,"plate_number":"$details.plate_number","alert":"$alerts.alert_info.alert_message","timestamp":"$alerts.created_at","location":"$alerts.alert_info.location","status":"$alerts.alert_info.status"}}])',
     },
     {
-        "tags": ["alerts", "alerthistory", "alertrule", "time-range"],
-        "collections": ["AlertHistory", "AlertRule"],
+        "tags": ["alerts", "alerthistory", "time-range"],
+        "collections": ["AlertHistory"],
         "question": "Get all alerts from 2025-10-01 to 2025-10-31.",
-        "query": 'db.AlertHistory.aggregate([{"$lookup":{"from":"AlertRule","localField":"alert_info.alert_rule_id","foreignField":"_id","as":"alert_rule"}},{"$unwind":"$alert_rule"},{"$match":{"created_at":{"$gte":{"$date":"2025-10-01T00:00:00Z"},"$lte":{"$date":"2025-10-31T23:59:59Z"}}}},{"$project":{"_id":0,"alert_type":"$alert_info.alert_type","name":"$alert_info.name","severity":"$alert_info.severity","timestamp":"$created_at","status":"$alert_info.status"}}])',
+        "query": 'db.AlertHistory.aggregate([{"$match":{"created_at":{"$gte":{"$date":"2025-10-01T00:00:00Z"},"$lte":{"$date":"2025-10-31T23:59:59Z"}}}},{"$project":{"_id":0,"type":"$alert_info.type","alert":"$alert_info.alert_message","severity":"$alert_info.severity","timestamp":"$created_at","status":"$alert_info.status"}}])',
+    },
+    {
+        "tags": ["reporting", "connectivity", "status", "not-reporting", "not-connected", "avlrecordlatest", "asset"],
+        "collections": ["Asset", "AvlRecord"],
+        "question": "Which vehicles are not reporting?",
+        "query": 'db.Asset.aggregate([{"$lookup":{"from":"AvlRecordLatest","let":{"aid":"$_id"},"pipeline":[{"$match":{"$expr":{"$eq":["$device_context.asset_id","$$aid"]},"is_processed":true}},{"$project":{"_id":0,"timestamp":1}}],"as":"latest"}},{"$addFields":{"last_packet":{"$first":"$latest.timestamp"}}},{"$match":{"$expr":{"$and":[{"$ne":["$last_packet",null]},{"$lt":["$last_packet",{"$dateSubtract":{"startDate":"$$NOW","unit":"hour","amount":12}}]}]}}},{"$project":{"_id":0,"plate_number":"$details.plate_number","last_reported":"$last_packet"}}])',
+    },
+    {
+        "tags": ["assetgroup", "group", "asset", "vehicles"],
+        "collections": ["AssetGroup", "Asset"],
+        "question": "Which vehicles are in the group SUZUKI 2026?",
+        "query": 'db.AssetGroup.aggregate([{"$match":{"name":{"$regex":"^SUZUKI 2026$","$options":"i"}}},{"$lookup":{"from":"Asset","localField":"assigned_assets.asset_id","foreignField":"_id","as":"assets"}},{"$unwind":"$assets"},{"$project":{"_id":0,"group":"$name","plate_number":"$assets.details.plate_number"}}])',
     },
     {
         "tags": ["device", "asset", "imei"],
