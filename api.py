@@ -488,7 +488,8 @@ async def get_conversations(authorization: Optional[str] = Header(default=None))
         from pymongo import MongoClient
         mongo_uri = os.getenv("MONGO_URI")
         if not mongo_uri:
-            return {"error": "MONGO_URI not configured", "conversations": []}
+            logger.error("[GetConversations] MONGO_URI not configured")
+            return {"error": "Service is temporarily unavailable.", "conversations": []}
 
         client = MongoClient(mongo_uri)
         db = client[mongo_db]
@@ -526,7 +527,8 @@ async def get_conversations(authorization: Optional[str] = Header(default=None))
 
         return {"conversations": conversations, "error": None}
     except Exception as e:
-        return {"error": str(e), "conversations": []}
+        logger.debug("[GetConversationsError] %s", str(e))
+        return {"error": "Unable to load conversations right now.", "conversations": []}
 
 
 class SessionRequest(BaseModel):
@@ -551,7 +553,8 @@ async def get_session(request: SessionRequest, authorization: Optional[str] = He
         from pymongo import MongoClient
         mongo_uri = os.getenv("MONGO_URI")
         if not mongo_uri:
-            return {"error": "MONGO_URI not configured", "messages": []}
+            logger.error("[GetSession] MONGO_URI not configured")
+            return {"error": "Service is temporarily unavailable.", "messages": []}
 
         client = MongoClient(mongo_uri)
         db = client[mongo_db]
@@ -581,7 +584,8 @@ async def get_session(request: SessionRequest, authorization: Optional[str] = He
 
         return {"messages": messages, "error": None}
     except Exception as e:
-        return {"error": str(e), "messages": []}
+        logger.debug("[GetSessionError] %s", str(e))
+        return {"error": "Unable to load session messages right now.", "messages": []}
 
 
 if __name__ == "__main__":

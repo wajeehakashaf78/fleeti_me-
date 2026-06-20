@@ -56,12 +56,30 @@ def _estimate_cost_usd(input_t: int, cached_t: int, output_t: int) -> float:
     return (uncached * price_in + cached_t * price_cached + output_t * price_out) / 1_000_000
 
 
+def _error_text(exc: Exception) -> str:
+    """Lower-cased error text, including the OpenAI error body message when present."""
+    msg = str(exc).lower()
+    body = getattr(exc, "body", None)
+    if isinstance(body, dict):
+        msg += " " + str(body.get("message", "")).lower()
+    return msg
+
+
 def _is_conversation_error(exc: Exception) -> bool:
     """True when a call failed because the conversation id is missing/invalid/expired."""
-    msg = str(exc).lower()
+    msg = _error_text(exc)
     return "conversation" in msg and any(
         s in msg for s in ("not found", "does not exist", "no conversation", "invalid")
     )
+
+
+def _is_stuck_tool_state(exc: Exception) -> bool:
+    """
+    True when the conversation has a dangling function_call with no matching output
+    (e.g. a prior report turn short-circuited before recording the tool output). Recoverable
+    by abandoning the conversation and starting a fresh one — same path as a missing conversation.
+    """
+    return "no tool output found for function call" in _error_text(exc)
 
 
 @dataclass
@@ -185,8 +203,20 @@ class FleetiAgent:
                         "output": json.dumps(result, default=str),
                     })
 
-                # A report with displayable data short-circuits to the structured payload.
+                # A report with displayable data short-circuits to the structured payload — but we
+                # must first record the tool output(s) on the conversation. Otherwise the run_report
+                # function_call is left dangling and the NEXT turn on this conversation fails with
+                # 400 "No tool output found for function call ...". We append the outputs directly
+                # (no extra model generation) to keep per-turn cost flat.
                 if ctx.report_has_data:
+                    try:
+                        await asyncio.to_thread(
+                            self.client.conversations.items.create,
+                            conversation_id=conversation_id,
+                            items=tool_outputs,
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning("[FleetiAgent] could not close report tool call on conversation: %s", exc)
                     _log_usage()
                     return AgentResult(
                         report_payload=ctx.report_payload,
@@ -215,8 +245,9 @@ class FleetiAgent:
                 export_url=ctx.export_url,
             )
         except Exception as exc:  # noqa: BLE001 - endpoint converts to a safe user message
-            if _is_conversation_error(exc):
-                logger.debug("[FleetiAgent] conversation invalid: %s", exc)
+            if _is_conversation_error(exc) or _is_stuck_tool_state(exc):
+                logger.debug("[FleetiAgent] conversation needs reset (%s): %s",
+                             "stuck tool state" if _is_stuck_tool_state(exc) else "invalid", exc)
                 return AgentResult(conversation_invalid=True)
             logger.debug("[FleetiAgent] run failed: %s", exc)
             return AgentResult(error=True)
