@@ -303,6 +303,15 @@ def dedupe_report_api_response(api_response: Any) -> Any:
 # ================================
 # Report request processing
 # ================================
+# Customer-specific report variants that hit the SAME backend API Type as a standard
+# report, but carry a distinct report_type so the FE can render the variant view.
+# The agent requests e.g. "IdlingKeyrent"; the API still receives Type="Idling".
+_API_TYPE_ALIASES: Dict[str, str] = {
+    "IdlingKeyrent": "Idling",
+    "OverspeedingKeyrent": "Overspeeding",
+}
+
+
 async def process_report_request(
     llm_response: LLMResponse,
     db_name: str,
@@ -384,6 +393,19 @@ async def process_report_request(
     elif report_type == "Utilization":
         if start_date and end_date:
             result["api_response"] = await api_handler.fetch_utilization_report(start_date, end_date)
+    elif report_type == "FuelSummary":
+        if asset_ids and start_date and end_date:
+            result["api_response"] = await api_handler.fetch_fuel_summary(asset_ids, start_date, end_date)
+    elif report_type == "DutyHour":
+        if asset_ids and start_date and end_date:
+            result["api_response"] = await api_handler.fetch_duty_hour_report(
+                asset_ids, start_date, end_date, time_zone=iana_tz
+            )
+    elif report_type == "AlertHistory":
+        if asset_ids and start_date and end_date:
+            result["api_response"] = await api_handler.fetch_alerts_history_report(
+                asset_ids, start_date, end_date
+            )
     elif report_type in ("DriverBehaviour", "DrivingBehaviour", "DriverBehavior"):
         if driver_ids and start_date and end_date:
             result["api_response"] = await api_handler.fetch_generic_report(
@@ -391,9 +413,12 @@ async def process_report_request(
                 time_zone=iana_tz,
             )
     else:
+        # Generic /fetch-dates reports (Type-based). Keyrent variants share a standard
+        # backend Type but keep their distinct report_type in the returned payload.
+        api_type = _API_TYPE_ALIASES.get(report_type, report_type)
         if asset_ids and start_date and end_date:
             result["api_response"] = await api_handler.fetch_generic_report(
-                report_type, asset_ids=asset_ids, start_date=start_date, end_date=end_date,
+                api_type, asset_ids=asset_ids, start_date=start_date, end_date=end_date,
                 time_zone=iana_tz,
             )
 

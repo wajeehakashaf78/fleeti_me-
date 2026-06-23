@@ -153,12 +153,12 @@ class APIHandler:
             "Type": "Trip",
         }
         if time_zone:
-            payload["TimeZone"] = time_zone
+            payload["timeZone"] = time_zone
         return await self.call_report_api("/fetch-dates", payload)
-    
+
     async def fetch_fleet_summary(self, asset_ids: str, page: int = 1, size: int = 10) -> Dict[str, Any]:
         """Fetch Fleet Summary Report"""
-        payload = self._add_pagination({"AssetIds": asset_ids}, page=page, size=size)
+        payload = self._add_pagination({"assetIds": asset_ids}, page=page, size=size)
         return await self.call_report_api(
             "/fleet-summary",
             payload,
@@ -176,9 +176,9 @@ class APIHandler:
     ) -> Dict[str, Any]:
         """Fetch Fleet Performance Summary Report"""
         payload = self._add_pagination({
-            "StartDate": start_date,
-            "EndDate": end_date,
-            "AssetIds": asset_ids
+            "startDate": start_date,
+            "endDate": end_date,
+            "assetIds": asset_ids
         }, page=page, size=size)
         return await self.call_report_api(
             "/fleet-performance",
@@ -217,8 +217,8 @@ class APIHandler:
     ) -> Dict[str, Any]:
         """Fetch Utilization/Work Hour Report"""
         payload = self._add_pagination({
-            "StartDate": start_date,
-            "EndDate": end_date
+            "startDate": start_date,
+            "endDate": end_date
         }, page=page, size=size)
         return await self.call_report_api(
             "/utilization",
@@ -226,7 +226,73 @@ class APIHandler:
             report_type="Utilization",
             request_only_log=True
         )
-    
+
+    async def fetch_fuel_summary(
+        self,
+        asset_ids: str,
+        start_date: str,
+        end_date: str,
+        page: int = 1,
+        size: int = 10
+    ) -> Dict[str, Any]:
+        """Fetch Fuel Summary Report"""
+        payload = self._add_pagination({
+            "startDate": start_date,
+            "endDate": end_date,
+            "assetId": asset_ids
+        }, page=page, size=size)
+        return await self.call_report_api(
+            "/fuel-summary-v1",
+            payload,
+            report_type="FuelSummary",
+            request_only_log=True
+        )
+
+    async def fetch_duty_hour_report(
+        self,
+        asset_ids: str,
+        start_date: str,
+        end_date: str,
+        time_zone: Optional[str] = None,
+        page: int = 1,
+        size: int = 10
+    ) -> Dict[str, Any]:
+        """Fetch Duty Hour Report"""
+        payload = self._add_pagination({
+            "startDate": start_date,
+            "endDate": end_date,
+            "assetId": asset_ids
+        }, page=page, size=size)
+        if time_zone:
+            payload["timeZone"] = time_zone
+        return await self.call_report_api(
+            "/duty-hour",
+            payload,
+            report_type="DutyHour",
+            request_only_log=True
+        )
+
+    async def fetch_alerts_history_report(
+        self,
+        asset_ids: str,
+        start_date: str,
+        end_date: str,
+        page: int = 1,
+        size: int = 10
+    ) -> Dict[str, Any]:
+        """Fetch User Alert History Report"""
+        payload = self._add_pagination({
+            "startDate": start_date,
+            "endDate": end_date,
+            "assetIds": asset_ids
+        }, page=page, size=size)
+        return await self.call_report_api(
+            "/alerts-history",
+            payload,
+            report_type="AlertHistory",
+            request_only_log=True
+        )
+
     async def fetch_generic_report(
         self,
         report_type: str,
@@ -265,7 +331,7 @@ class APIHandler:
         if end_date:
             payload["EndDate"] = end_date
         if time_zone:
-            payload["TimeZone"] = time_zone
+            payload["timeZone"] = time_zone
 
         return await self.call_report_api("/fetch-dates", payload)
 
