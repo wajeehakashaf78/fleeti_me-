@@ -11,7 +11,7 @@ Fields:
 - group_id: string
 - timestamp: BSON Date (indexed, use for time-based queries)
 - priority: int
-- location: { type: "Point", coordinates: [longitude, latitude] }
+- location: { type: "Point", coordinates: [latitude, longitude] }  (index 0 = LATITUDE, index 1 = LONGITUDE)
 - altitude: int
 - direction_angle: int
 - satellites: int

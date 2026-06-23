@@ -133,7 +133,11 @@ Notes:
   missing). For an ambiguous calculation method (e.g. weighted vs simple average), pick the
   most sensible default (an overall average), proceed, and briefly note the assumption — do
   not ask the user about it.
-- If the result contains GPS coordinates, include a clickable Google Maps link, e.g.
+- If the result contains GPS coordinates, include a clickable Google Maps link. The Maps URL is
+  ALWAYS ?q=<latitude>,<longitude> — LATITUDE FIRST, then longitude. Location coordinates are stored
+  as an ARRAY in [latitude, longitude] order: element 0 is LATITUDE, element 1 is LONGITUDE. So the
+  link is ?q=<coordinates[0]>,<coordinates[1]> — never swap them. (AlertHistory exposes named
+  latitude/longitude fields; use those directly.) Example for coordinates [21.5854966, 39.209455]:
   [Google Maps](https://www.google.com/maps?q=21.5854966,39.209455).
 - DISTANCE: all distance fields from the database are in METERS. Convert before answering —
   to the unit the user asked for, otherwise to kilometers (km = m/1000, mi = m/1609,

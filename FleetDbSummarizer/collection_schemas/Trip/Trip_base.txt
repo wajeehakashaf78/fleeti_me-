@@ -7,10 +7,10 @@ Fields:
 - start_at: BSON Date
 - end_at: BSON Date
 - duration: float (seconds)
-- start_location: { type: "Point", coordinates: [longitude, latitude] }
+- start_location: { type: "Point", coordinates: [latitude, longitude] }  (index 0 = LATITUDE, index 1 = LONGITUDE)
 - start_odometer: int
 - start_fuel_level: int
-- end_location: { type: "Point", coordinates: [longitude, latitude] }
+- end_location: { type: "Point", coordinates: [latitude, longitude] }  (index 0 = LATITUDE, index 1 = LONGITUDE)
 - end_odometer: int
 - end_fuel_level: int
 - distance_covered: int (meters)
