@@ -802,15 +802,23 @@ def _enforce_starting_collection_tenant(
 # The bot only ever answers for ACTIVE vehicles, so every query that touches the
 # Asset collection (as the starting collection or via a $lookup) is restricted to:
 #   device_availability == "AssignedToDevice"
-#   AND status == "Active"
+#   AND status is "Active" OR "Maintenance" (a vehicle in maintenance is still active)
 #   AND (expiry_date >= now OR expiry_date missing OR expiry_date null)
+# Any other status (Inactive, expired, Blocked, ...) or a past expiry_date means the
+# vehicle is inactive / has an expired subscription and is excluded.
+# Status is matched CASE-INSENSITIVELY: real data carries casing variants (e.g. the
+# lowercase "active"), so an exact "Active" match would wrongly drop those vehicles.
 # ---------------------------
+
+# Anchored so "Inactive" / "expired" / "Blocked" never match.
+_ACTIVE_STATUS_REGEX = {"$regex": r"^(active|maintenance)$", "$options": "i"}
+
 
 def _active_asset_filter() -> Dict[str, Any]:
     now = datetime.now(timezone.utc)
     return {
         "device_availability": "AssignedToDevice",
-        "status": "Active",
+        "status": _ACTIVE_STATUS_REGEX,
         "$or": [
             {"expiry_date": {"$gte": now}},
             {"expiry_date": {"$exists": False}},

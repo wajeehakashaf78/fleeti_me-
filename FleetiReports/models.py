@@ -22,7 +22,13 @@ class PreRequisites(BaseModel):
     driver_names: Optional[List[str]] = Field(None, alias="driver_name(s)")
     date_range: Optional[str] = Field(None, description="Format: start_date,end_date")
     geofence_names: Optional[List[str]] = Field(None, alias="geofence_name(s)")
-    
+    # Duty Hour report only. duty_type: "on" (default) or "off"; the duty window
+    # times default to 10:00 -> 19:00 local. The server applies the off-duty swap
+    # and the local->UTC conversion (never the agent).
+    duty_type: Optional[str] = Field(None, description="DutyHour only: 'on' (default) or 'off'")
+    duty_start_time: Optional[str] = Field(None, description="DutyHour only: window start time, 24h HH:MM (default 10:00)")
+    duty_end_time: Optional[str] = Field(None, description="DutyHour only: window end time, 24h HH:MM (default 19:00)")
+
     class Config:
         populate_by_name = True
 

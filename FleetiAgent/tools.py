@@ -352,7 +352,12 @@ TOOL_DEFINITIONS: List[Dict[str, Any]] = [
         "description": (
             "Generate one of the supported fleet reports. Only call this once all required "
             "prerequisites for the chosen report type are known (ask the user otherwise). "
-            "Provide resolved dates; do not invent a date range."
+            "Provide resolved dates; do not invent a date range. Pass dates/times in the USER'S "
+            "LOCAL timezone — the server converts them to UTC (never convert times yourself).\n\n"
+            "DutyHour only: optionally set duty_type ('on' default, or 'off') and a duty time "
+            "window via duty_start_time/duty_end_time (24h HH:MM, default 10:00 and 19:00). Only "
+            "set these when the user states them; the server applies the defaults, the off-duty "
+            "swap, and the UTC conversion."
         ),
         "parameters": {
             "type": "object",
@@ -384,6 +389,19 @@ TOOL_DEFINITIONS: List[Dict[str, Any]] = [
                     "type": "array",
                     "items": {"type": "string"},
                     "description": "Geofence names when relevant.",
+                },
+                "duty_type": {
+                    "type": "string",
+                    "enum": ["on", "off"],
+                    "description": "DutyHour only: 'on' (default) or 'off' duty. Set 'off' only if the user asks for off-duty.",
+                },
+                "duty_start_time": {
+                    "type": "string",
+                    "description": "DutyHour only: duty window start time in 24h HH:MM (default 10:00). Set only if the user states it.",
+                },
+                "duty_end_time": {
+                    "type": "string",
+                    "description": "DutyHour only: duty window end time in 24h HH:MM (default 19:00). Set only if the user states it.",
                 },
             },
             "required": ["report_type"],
@@ -645,15 +663,20 @@ async def _tool_run_report(args: Dict[str, Any], ctx: ToolContext) -> Dict[str, 
         driver_names=args.get("driver_names"),
         date_range=args.get("date_range"),
         geofence_names=args.get("geofence_names"),
+        duty_type=args.get("duty_type"),
+        duty_start_time=args.get("duty_start_time"),
+        duty_end_time=args.get("duty_end_time"),
     )
     # FleetSummary never takes a date range.
     if report_type == "FleetSummary":
         pre_req.date_range = None
 
     logger.info(
-        "🧾 run_report | type=%s | plates=%s groups=%s drivers=%s geofences=%s date_range=%s",
+        "🧾 run_report | type=%s | plates=%s groups=%s drivers=%s geofences=%s date_range=%s%s",
         report_type, pre_req.asset_plate_numbers, pre_req.group_names,
         pre_req.driver_names, pre_req.geofence_names, pre_req.date_range,
+        (f" duty_type={pre_req.duty_type or 'on'} window={pre_req.duty_start_time or '10:00'}-{pre_req.duty_end_time or '19:00'}"
+         if report_type == "DutyHour" else ""),
     )
 
     llm_response = LLMResponse(type=report_type, pre_req=pre_req, message="")

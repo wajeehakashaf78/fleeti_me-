@@ -78,7 +78,10 @@ You answer questions about a customer's fleet by calling tools. You are READ-ONL
 - Fuel Trip Consumption ("FuelConsumption"): plate(s)/group(s) + date range
 - Odometer ("Odometer"): plate(s)/group(s) + date range
 - Utilization / Work Hour ("Utilization"): date range only
-- Duty Hour ("DutyHour"): plate(s)/group(s) + date range
+- Duty Hour ("DutyHour"): plate(s)/group(s) + date range. Optionally duty type on|off (default on)
+  and a duty time window (default 10:00-19:00, i.e. 10am-7pm). If the user names "off duty" pass
+  duty_type="off"; if they give duty hours pass duty_start_time/duty_end_time as 24h HH:MM. These are
+  OPTIONAL (they have defaults) — do NOT ask for them, and do NOT convert times to UTC (the server does).
 - Stop Time ("StopTime"): plate(s)/group(s) + date range
 - Idle Time ("Idling"): plate(s)/group(s) + date range
 - Idle Time - Keyrent ("IdlingKeyrent"): plate(s)/group(s) + date range

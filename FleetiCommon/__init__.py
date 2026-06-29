@@ -218,6 +218,71 @@ def normalize_report_date_range_to_utc(
 
 
 # ================================
+# Duty Hour date range (duty window + on/off duty)
+# ================================
+# Default local wall-clock duty window: 10:00 AM -> 7:00 PM. on-duty = the window
+# itself; off-duty = its complement, so the start/end times are swapped.
+DUTY_DEFAULT_START_TIME = "10:00"
+DUTY_DEFAULT_END_TIME = "19:00"
+
+
+def _parse_time_of_day(value: Optional[str], default: str) -> str:
+    """Parse a wall-clock time ('10:00', '7:00 PM', '19:00') to 'HH:MM:SS'.
+    Falls back to `default` when missing/unparseable."""
+    raw = (value or "").strip()
+    for candidate in (raw, default):
+        if not candidate:
+            continue
+        try:
+            return dtparser.parse(candidate).strftime("%H:%M:%S")
+        except Exception:
+            continue
+    return "00:00:00"
+
+
+def is_off_duty(duty_type: Optional[str]) -> bool:
+    """True when the user asked for an OFF-duty report (default is on-duty)."""
+    norm = (duty_type or "on").strip().lower().replace("-", " ").replace("_", " ")
+    return norm in ("off", "off duty", "offduty")
+
+
+def normalize_duty_hour_range_to_utc(
+    date_range_str: str,
+    user_time_zone: Optional[str],
+    duty_type: Optional[str] = None,
+    start_time: Optional[str] = None,
+    end_time: Optional[str] = None,
+) -> Tuple[str, str]:
+    """
+    Build the Duty Hour report's UTC start/end from the date range + duty window.
+
+    Defaults: on-duty, 10:00 -> 19:00 local. The window's time-of-day is applied to
+    the start/end DATES (any time inside date_range is ignored), then converted to UTC
+    using the user's timezone — server-side, never the agent.
+      - ON  duty: start = start_date @ start_time, end = end_date @ end_time
+      - OFF duty: start = start_date @ end_time,   end = end_date @ start_time  (complement)
+    """
+    start_raw, end_raw = parse_date_range(date_range_str)
+    user_tz = parse_user_utc_offset(user_time_zone)
+    start_day = dtparser.parse(start_raw).date()
+    end_day = dtparser.parse(end_raw).date()
+
+    st = _parse_time_of_day(start_time, DUTY_DEFAULT_START_TIME)
+    et = _parse_time_of_day(end_time, DUTY_DEFAULT_END_TIME)
+
+    if is_off_duty(duty_type):
+        local_start = f"{start_day.isoformat()} {et}"
+        local_end = f"{end_day.isoformat()} {st}"
+    else:
+        local_start = f"{start_day.isoformat()} {st}"
+        local_end = f"{end_day.isoformat()} {et}"
+
+    start_utc = to_utc_iso_z_for_report(local_start, user_tz=user_tz)
+    end_utc = to_utc_iso_z_for_report(local_end, user_tz=user_tz)
+    return start_utc, end_utc
+
+
+# ================================
 # Report payload dedupe
 # ================================
 def dedupe_items_by_date_asset_id(items: List[Any]) -> List[Any]:
@@ -341,8 +406,9 @@ async def process_report_request(
             sub_tenant_id=resolved_sub_tenant_id
         )
         result["mongodb_query_result"] = query_result
-        if query_result["success"] and query_result["asset_ids"]:
-            asset_ids = ",".join(query_result["asset_ids"])
+        resolved_assets = query_result.get("asset_imeis") if report_type == "Wasl" else query_result.get("asset_ids")
+        if query_result["success"] and resolved_assets:
+            asset_ids = ",".join(resolved_assets)
     elif pre_req.group_names:
         query_result = mongo_handler.get_asset_ids_by_group_names(
             db_name,
@@ -350,8 +416,9 @@ async def process_report_request(
             sub_tenant_id=resolved_sub_tenant_id
         )
         result["mongodb_query_result"] = query_result
-        if query_result["success"] and query_result["asset_ids"]:
-            asset_ids = ",".join(query_result["asset_ids"])
+        resolved_assets = query_result.get("asset_imeis") if report_type == "Wasl" else query_result.get("asset_ids")
+        if query_result["success"] and resolved_assets:
+            asset_ids = ",".join(resolved_assets)
 
     driver_ids = None
     if pre_req.driver_names:
@@ -367,10 +434,21 @@ async def process_report_request(
     start_date = None
     end_date = None
     if pre_req.date_range:
-        start_date, end_date = normalize_report_date_range_to_utc(
-            pre_req.date_range,
-            user_time_zone
-        )
+        if report_type == "DutyHour":
+            # Duty Hour applies a duty-time window (default 10:00-19:00) with an
+            # on/off-duty swap, instead of the generic 00:00:00 / 23:59:59 boundaries.
+            start_date, end_date = normalize_duty_hour_range_to_utc(
+                pre_req.date_range,
+                user_time_zone,
+                duty_type=pre_req.duty_type,
+                start_time=pre_req.duty_start_time,
+                end_time=pre_req.duty_end_time,
+            )
+        else:
+            start_date, end_date = normalize_report_date_range_to_utc(
+                pre_req.date_range,
+                user_time_zone
+            )
 
     iana_tz = offset_to_iana_timezone(user_time_zone)
 

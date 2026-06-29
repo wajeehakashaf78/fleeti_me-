@@ -21,11 +21,13 @@ def print(*args: Any, **kwargs: Any) -> None:
 
 def _active_asset_match() -> Dict[str, Any]:
     """Active-vehicle conditions (mirrors FleetiQueryRunner.execute._active_asset_filter):
-    only assets assigned to a device, Active status, and not expired."""
+    only assets assigned to a device, status Active OR Maintenance, and not expired.
+    Status is matched case-insensitively (real data has casing variants like "active");
+    the anchored regex keeps Inactive/expired/Blocked excluded."""
     now = datetime.now(timezone.utc)
     return {
         "device_availability": "AssignedToDevice",
-        "status": "Active",
+        "status": {"$regex": r"^(active|maintenance)$", "$options": "i"},
         "$or": [
             {"expiry_date": {"$gte": now}},
             {"expiry_date": {"$exists": False}},
@@ -130,7 +132,8 @@ class MongoDBHandler:
                 pipeline.append({
                     "$project": {
                         "_id": 1,
-                        "plate_number": "$details.plate_number"
+                        "plate_number": "$details.plate_number",
+                        "imei": "$device_details.imei"
                     }
                 })
             else:
@@ -174,7 +177,8 @@ class MongoDBHandler:
                     {
                         "$project": {
                             "_id": 1,
-                            "plate_number": "$details.plate_number"
+                            "plate_number": "$details.plate_number",
+                            "imei": "$device_details.imei"
                         }
                     }
                 ]
@@ -198,6 +202,7 @@ class MongoDBHandler:
             print(f"Results: {results}")
 
             asset_ids = self._unique_strings([r["_id"] for r in results])
+            asset_imeis = self._unique_strings([r["imei"] for r in results if r.get("imei")])
 
             logger.info(
                 "🔎 resolve assets by PLATE | db=%s | plates=%s | all=%s | normalized=%s | active-only | matched=%d | asset_ids=%s",
@@ -209,7 +214,8 @@ class MongoDBHandler:
                 "success": True,
                 "count": len(results),
                 "assets": results,
-                "asset_ids": asset_ids
+                "asset_ids": asset_ids,
+                "asset_imeis": asset_imeis
             }
 
         except PyMongoError as e:
@@ -263,7 +269,7 @@ class MongoDBHandler:
                         "let": {"aid": "$assigned_assets.asset_id"},
                         "pipeline": [
                             {"$match": {"$expr": {"$eq": ["$_id", "$$aid"]}, **_active_asset_match()}},
-                            {"$project": {"_id": 1}},
+                            {"$project": {"_id": 1, "imei": "$device_details.imei"}},
                         ],
                         "as": "_active_asset",
                     }
@@ -274,7 +280,8 @@ class MongoDBHandler:
                         "_id": 0,
                         "group_id": "$_id",
                         "deviceGroup": "$name",
-                        "asset_id": "$assigned_assets.asset_id"
+                        "asset_id": "$assigned_assets.asset_id",
+                        "imei": {"$first": "$_active_asset.imei"}
                     }
                 }
             ])
@@ -299,6 +306,7 @@ class MongoDBHandler:
             print(f"Results: {results}")
 
             asset_ids = self._unique_strings([r["asset_id"] for r in results])
+            asset_imeis = self._unique_strings([r["imei"] for r in results if r.get("imei")])
             group_ids = self._unique_strings([r["group_id"] for r in results if r.get("group_id") is not None])
 
             logger.info(
@@ -311,6 +319,7 @@ class MongoDBHandler:
                 "count": len(results),
                 "assets": results,
                 "asset_ids": asset_ids,
+                "asset_imeis": asset_imeis,
                 "group_ids": group_ids
             }
 
