@@ -16,7 +16,7 @@ import logging
 from typing import Optional, Dict, Any, List, Tuple
 from datetime import datetime, timezone
 
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
@@ -470,11 +470,44 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(defau
         return ChatResponse(human_response=_user_friendly_failure_message(), error=False)
 
 
-@app.get("/conversations")
-async def get_conversations(authorization: Optional[str] = Header(default=None)):
+# ================================
+# Pagination (conversations list + per-session messages)
+# ================================
+_MAX_PAGE_SIZE = 100
+
+
+def _normalize_page_size(
+    page: Optional[int], size: Optional[int], default_size: int
+) -> Tuple[bool, int, int]:
     """
-    List all conversation sessions for the sub-tenant in the JWT.
+    Resolve optional page/size into (paginate, page, size).
+
+    Pagination is OPT-IN: when the caller passes neither page nor size, `paginate`
+    is False and the endpoint returns the full set (backward compatible). When either
+    is provided, page>=1 and 1<=size<=_MAX_PAGE_SIZE.
+    """
+    paginate = page is not None or size is not None
+    p = page if (page is not None and page >= 1) else 1
+    try:
+        s = int(size) if size is not None else int(default_size)
+    except (TypeError, ValueError):
+        s = default_size
+    s = max(1, min(s, _MAX_PAGE_SIZE))
+    return paginate, p, s
+
+
+@app.get("/conversations")
+async def get_conversations(
+    authorization: Optional[str] = Header(default=None),
+    page: Optional[int] = Query(default=None, ge=1, description="1-based page (omit for all)"),
+    size: Optional[int] = Query(default=None, ge=1, le=_MAX_PAGE_SIZE, description="Page size (omit for all)"),
+):
+    """
+    List conversation sessions for the sub-tenant in the JWT, newest activity first.
     Returns session _id, last message content, and last message timestamp.
+
+    Pagination (for infinite scroll / "load more" as the user scrolls down) is opt-in:
+    pass page & size to get one page plus {total, has_more}; omit them to get all sessions.
     """
     try:
         if not authorization:
@@ -495,15 +528,29 @@ async def get_conversations(authorization: Optional[str] = Header(default=None))
         db = client[mongo_db]
         collection = db["FleetiMessages"]
 
+        paginate, page_n, size_n = _normalize_page_size(page, size, default_size=20)
+        skip = (page_n - 1) * size_n
+
+        # $facet computes the (optional) page slice AND the total count in one round trip,
+        # so the FE knows whether more pages remain.
+        items_stage: List[Dict[str, Any]] = []
+        if paginate:
+            items_stage += [{"$skip": skip}, {"$limit": size_n}]
+        items_stage.append({"$project": {"_id": 1, "last_message": 1, "last_timestamp": 1}})
+
         pipeline = [
             {"$match": {"sub_tenant_id": sub_tenant_id}},
             {"$addFields": {"last_message": {"$arrayElemAt": ["$messages", -1]}}},
             {"$addFields": {"last_timestamp": "$last_message.timestamp"}},
             {"$sort": {"last_timestamp": -1}},
-            {"$project": {"_id": 1, "last_message": 1, "last_timestamp": 1}},
+            {"$facet": {"items": items_stage, "total": [{"$count": "count"}]}},
         ]
 
-        sessions = list(collection.aggregate(pipeline))
+        facet = list(collection.aggregate(pipeline))
+        doc = facet[0] if facet else {}
+        sessions = doc.get("items", []) or []
+        total_arr = doc.get("total") or []
+        total = total_arr[0].get("count", 0) if total_arr else 0
 
         conversations = []
         for session in sessions:
@@ -525,7 +572,15 @@ async def get_conversations(authorization: Optional[str] = Header(default=None))
                 "last_timestamp": _format_datetime_utc_z(last_ts),
             })
 
-        return {"conversations": conversations, "error": None}
+        has_more = bool(paginate and (skip + len(conversations) < total))
+        return {
+            "conversations": conversations,
+            "page": page_n if paginate else 1,
+            "size": size_n if paginate else total,
+            "total": total,
+            "has_more": has_more,
+            "error": None,
+        }
     except Exception as e:
         logger.debug("[GetConversationsError] %s", str(e))
         return {"error": "Unable to load conversations right now.", "conversations": []}
@@ -533,6 +588,8 @@ async def get_conversations(authorization: Optional[str] = Header(default=None))
 
 class SessionRequest(BaseModel):
     session_id: str = Field(..., description="Session ID (MongoDB document ID)")
+    page: Optional[int] = Field(default=None, ge=1, description="1-based page from the newest message (omit for all)")
+    size: Optional[int] = Field(default=None, ge=1, le=_MAX_PAGE_SIZE, description="Messages per page (omit for all)")
 
 
 @app.post("/session")
@@ -566,7 +623,7 @@ async def get_session(request: SessionRequest, authorization: Optional[str] = He
         })
 
         if not session_doc:
-            return {"messages": [], "error": None}
+            return {"messages": [], "page": 1, "size": 0, "total": 0, "has_more": False, "error": None}
 
         messages = []
         for msg in session_doc.get("messages", []):
@@ -582,7 +639,29 @@ async def get_session(request: SessionRequest, authorization: Optional[str] = He
                     "human_response": msg.get("human_response", msg.get("llm_response", "")),
                 })
 
-        return {"messages": messages, "error": None}
+        total = len(messages)
+        paginate, page_n, size_n = _normalize_page_size(request.page, request.size, default_size=10)
+
+        if not paginate:
+            # Legacy: return the full conversation in chronological order.
+            return {"messages": messages, "page": 1, "size": total, "total": total, "has_more": False, "error": None}
+
+        # Paginate from the NEWEST end: page 1 = the most recent `size` messages; higher
+        # pages walk backwards in time (for "scroll up to load older"). Each page stays in
+        # chronological (oldest -> newest) order so the FE can render/prepend it directly.
+        end = total - (page_n - 1) * size_n
+        start = max(0, total - page_n * size_n)
+        page_items = messages[start:end] if end > 0 else []
+        has_more = start > 0  # older messages remain above this page
+
+        return {
+            "messages": page_items,
+            "page": page_n,
+            "size": size_n,
+            "total": total,
+            "has_more": has_more,
+            "error": None,
+        }
     except Exception as e:
         logger.debug("[GetSessionError] %s", str(e))
         return {"error": "Unable to load session messages right now.", "messages": []}
