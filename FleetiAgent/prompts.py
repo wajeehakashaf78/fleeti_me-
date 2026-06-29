@@ -7,7 +7,9 @@ MongoDB pipeline) live in the tool descriptions in tools.py, per GPT-5 prompting
 guidance ("put most tool-specific guidance in the tool descriptions themselves").
 """
 
+import re
 from datetime import datetime, timezone
+from typing import Optional, Tuple
 
 
 def build_orchestrator_instructions() -> str:
@@ -87,17 +89,13 @@ You answer questions about a customer's fleet by calling tools. You are READ-ONL
 - Idle Time - Keyrent ("IdlingKeyrent"): plate(s)/group(s) + date range
 - Geofence In ("Geofence"): plate(s)/group(s) + date range
 - Geofence Out ("GeofenceOut"): plate(s)/group(s) + date range
-- Raw Data ("RawData"): plate(s)/group(s) + date range
-- Track Data / All Parameters ("RawTrackData"): plate(s)/group(s) + date range
 - Over Speeding ("Overspeeding"): plate(s)/group(s) + date range
 - Over Speeding - Keyrent ("OverspeedingKeyrent"): plate(s)/group(s) + date range
 - Driving Behaviour ("DriverBehavior"): driver name(s) + date range
-- Temperature & Humidity ("TemperatureHumidity"): plate(s)/group(s) + date range
-- Weight Sensor ("WeightSensor"): plate(s)/group(s) + date range
 - Commands History ("Command"): plate(s)/group(s) + date range
 - Events ("Event"): plate(s)/group(s) + date range
 - User Alert History ("AlertHistory"): plate(s)/group(s) + date range
-- WASL ("Wasl"): plate(s)/group(s) + date range
+- WASL ("WASL"): plate(s)/group(s) + date range
 Notes:
 - "Fleet Summary" and "Fleet Performance Summary" are different report types; never swap them.
 - "Geofence In" ("Geofence") and "Geofence Out" ("GeofenceOut") are separate reports.
@@ -160,3 +158,43 @@ Notes:
 - End data and conversation answers with exactly: "Let me know if you need anything else."
   (Arabic equivalent for Arabic answers). Do not add this to report results.
 """
+
+
+# ================================
+# Canonical report-type registry (single source of truth = the SUPPORTED REPORTS list above)
+# ================================
+# Parsed straight from the prompt's SUPPORTED REPORTS section so the allowed types can
+# never drift from what the model is told. Each canonical type is the quoted token in
+# ("...") on a report line, e.g. - WASL ("WASL"): ... -> "WASL".
+def _extract_supported_report_types(instructions: str) -> Tuple[str, ...]:
+    m = re.search(r"=== SUPPORTED REPORTS[^\n]*===\n(.*?)\n=== ", instructions, re.S)
+    block = m.group(1) if m else instructions
+    # dict.fromkeys preserves order and dedupes (some names repeat in the Notes).
+    return tuple(dict.fromkeys(re.findall(r'\("([^"]+)"\)', block)))
+
+
+SUPPORTED_REPORT_TYPES: Tuple[str, ...] = _extract_supported_report_types(
+    build_orchestrator_instructions()
+)
+
+# Normalized lookup (lowercase, alphanumerics only) -> canonical name, so casing/spacing/
+# punctuation variants ("wasl", "duty hour", "fuel summary") resolve to the canonical token.
+_CANONICAL_BY_NORM = {re.sub(r"[^a-z0-9]", "", t.lower()): t for t in SUPPORTED_REPORT_TYPES}
+
+# Known synonyms (alt display names / spelling variants) that map to a canonical type.
+_REPORT_TYPE_ALIASES = {
+    "driverbehaviour": "DriverBehavior",
+    "drivingbehaviour": "DriverBehavior",
+    "drivingbehavior": "DriverBehavior",
+    "fleetstatistics": "Trip",   # "Trip / Fleet Statistics"
+    "workhour": "Utilization",   # "Utilization / Work Hour"
+}
+
+
+def canonicalize_report_type(name: Optional[str]) -> Optional[str]:
+    """Map a report-type string to its canonical SUPPORTED REPORTS name, or None if it
+    is not a supported report. Tolerant of casing/spacing/punctuation and known synonyms."""
+    if not name:
+        return None
+    key = re.sub(r"[^a-z0-9]", "", name.lower())
+    return _CANONICAL_BY_NORM.get(key) or _REPORT_TYPE_ALIASES.get(key)

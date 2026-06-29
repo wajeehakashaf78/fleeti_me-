@@ -34,6 +34,7 @@ from FleetiCommon import (
     report_outcome_status,
 )
 from FleetiAgent.schema_service import build_menu, get_query_context, RULES
+from FleetiAgent.prompts import SUPPORTED_REPORT_TYPES, canonicalize_report_type
 
 logger = logging.getLogger(__name__)
 
@@ -653,9 +654,22 @@ def _tool_export_results(args: Dict[str, Any], ctx: ToolContext) -> Dict[str, An
 
 
 async def _tool_run_report(args: Dict[str, Any], ctx: ToolContext) -> Dict[str, Any]:
-    report_type = (args.get("report_type") or "").strip()
-    if not report_type:
+    raw_report_type = (args.get("report_type") or "").strip()
+    if not raw_report_type:
         return {"error": "missing_report_type"}
+
+    # Enforce that the report type is one of the SUPPORTED REPORTS (prompts.py). Normalize
+    # casing/spacing/synonyms to the canonical token so the final response's report_type
+    # field always exactly matches the supported list. Unknown types are rejected (this also
+    # hard-blocks any report removed from the list).
+    report_type = canonicalize_report_type(raw_report_type)
+    if not report_type:
+        logger.info("🧾 run_report | rejected unsupported report_type=%r", raw_report_type)
+        return {
+            "error": "unsupported_report_type",
+            "detail": f"'{raw_report_type}' is not a supported report.",
+            "supported_report_types": list(SUPPORTED_REPORT_TYPES),
+        }
 
     pre_req = PreRequisites(
         asset_plate_numbers=args.get("asset_plate_numbers"),
