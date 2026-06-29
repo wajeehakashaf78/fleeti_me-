@@ -13,6 +13,7 @@ import copy
 import time
 import asyncio
 import logging
+from uuid import uuid4
 from typing import Optional, Dict, Any, List, Tuple
 from datetime import datetime, timezone
 
@@ -60,8 +61,19 @@ def _configure_api_logging() -> None:
     ):
         logging.getLogger(name).setLevel(logging.INFO)
 
-    # Mirror the per-question trace (turn start, executed query, tool steps, token usage)
-    # to a rotating log file, in addition to the terminal.
+    # The FLEETI per-turn trace loggers (turn start, executed query, tool steps, report
+    # API calls, token usage). Mirrored to a rotating log file AND shipped to Elasticsearch.
+    fleeti_log_sources = (
+        "FleetiAgent.agent",
+        "FleetiAgent.tools",
+        "FleetiAgent.usage",
+        "FleetiQueryRunner.execute",
+        "FleetiReports.api_handler",
+        "FleetiReports.mongo_handler",
+        "FleetiHistorySaver.history_saver",
+    )
+
+    # Mirror the per-question trace to a rotating log file, in addition to the terminal.
     try:
         from logging.handlers import RotatingFileHandler
         log_path = os.getenv("FLEETI_LOG_FILE") or os.path.join("logs", "fleeti.log")
@@ -71,22 +83,27 @@ def _configure_api_logging() -> None:
         )
         file_handler.setLevel(logging.INFO)
         file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
-        for name in (
-            "FleetiAgent.agent",
-            "FleetiAgent.tools",
-            "FleetiAgent.usage",
-            "FleetiQueryRunner.execute",
-            "FleetiReports.api_handler",
-            "FleetiReports.mongo_handler",
-            "FleetiHistorySaver.history_saver",
-        ):
+        for name in fleeti_log_sources:
             lg = logging.getLogger(name)
             if not any(isinstance(h, RotatingFileHandler) for h in lg.handlers):
                 lg.addHandler(file_handler)
     except Exception:
         pass
 
+    # Ship the same per-turn trace to Elasticsearch (opt-in: no-op unless ELASTIC_URL is set).
+    # Each log record becomes one ES document tagged with the current turn's context, so the
+    # complete logs of a /chat turn can be retrieved by filtering on turn_id.
+    try:
+        from elastic_logging import configure_elastic_logging
+        configure_elastic_logging(fleeti_log_sources)
+    except Exception:
+        pass
 
+
+# Load .env BEFORE configuring logging so the Elasticsearch settings (ELASTIC_URL etc.)
+# are visible to _configure_api_logging(). load_dotenv() is idempotent and called again
+# below for clarity; by default it does not override already-set environment variables.
+load_dotenv()
 _configure_api_logging()
 logger = logging.getLogger(__name__)
 
@@ -96,6 +113,7 @@ from FleetiAgent import agent as fleeti_agent
 from FleetiAgent.tools import EXPORTS_DIR, sweep_old_exports
 from FleetiCommon import should_remove_sub_tenant_match
 from jwt_utils import decode_jwt_no_verify, extract_db_and_sub_tenant, extract_db_from_url
+from elastic_logging import set_turn_context, reset_turn_context
 
 load_dotenv()
 
@@ -342,6 +360,7 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(defau
     Scenario 2 (user_input + session_id): run the agent and return the answer
     (natural-language text, or a structured report payload).
     """
+    turn_token = None
     try:
         if not authorization:
             return ChatResponse(human_response="Missing Authorization header.", error=True)
@@ -355,6 +374,16 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(defau
                 human_response="Invalid token: missing database information.",
                 error=True,
             )
+
+        # Tag every log line of THIS turn with correlation context (shipped to
+        # Elasticsearch when configured). turn_id groups the complete logs of one turn.
+        turn_token = set_turn_context(
+            turn_id=uuid4().hex,
+            session_id=request.session_id,
+            sub_tenant_id=sub_tenant_id,
+            mongo_db=mongo_db,
+            user_input=(request.user_input or "")[:1000] or None,
+        )
 
         # Scenario 1: create session with a static assistant message.
         if request.assistant_static_input is not None:
@@ -468,6 +497,8 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(defau
     except Exception as e:
         logger.debug("[UnhandledChatError] %s", str(e))
         return ChatResponse(human_response=_user_friendly_failure_message(), error=False)
+    finally:
+        reset_turn_context(turn_token)
 
 
 # ================================
