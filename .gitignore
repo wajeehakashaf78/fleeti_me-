@@ -24,6 +24,10 @@ frontend/
 # Text files
 
 docs/
+search.json
+reports.md
+cost_experiments/
+docs/
 
 
 # Environment variables
