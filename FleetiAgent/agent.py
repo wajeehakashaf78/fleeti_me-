@@ -24,6 +24,7 @@ except Exception:  # pragma: no cover
 
 from FleetiAgent.prompts import build_orchestrator_instructions
 from FleetiAgent.tools import TOOL_DEFINITIONS, ToolContext, execute_tool
+from FleetiAgent.turn_trace import TurnTrace, trace_enabled
 from FleetiCommon import parse_user_utc_offset
 
 load_dotenv()
@@ -161,6 +162,22 @@ class FleetiAgent:
             {"role": "user", "content": user_message},
         ]
 
+        # Per-turn debug trace (test-only; no-op unless FLEETI_TURN_TRACE is enabled).
+        trace = TurnTrace(trace_enabled())
+        trace.set_meta(
+            timestamp=now_user.isoformat(timespec="seconds"),
+            conversation_id=conversation_id,
+            model=self.model,
+            reasoning=self.reasoning_effort,
+            mongo_db=mongo_db,
+            sub_tenant_id=sub_tenant_id,
+            time_zone=time_zone or "UTC",
+            question=user_message,
+        )
+        trace.section("USER QUESTION")
+        trace.block("question", user_message or "")
+        trace.block("input sent to model (turn 1)", input_items)
+
         # Per-turn token accounting (measurement only — no behavior change).
         usage = {"calls": 0, "input": 0, "cached": 0, "output": 0, "reasoning": 0}
 
@@ -181,9 +198,24 @@ class FleetiAgent:
                 usage["output"], usage["reasoning"], est,
             )
 
+        def _trace_totals() -> str:
+            est = _estimate_cost_usd(usage["input"], usage["cached"], usage["output"])
+            return (
+                f"TOTALS: calls={usage['calls']} input={usage['input']} cached={usage['cached']} "
+                f"output={usage['output']} reasoning={usage['reasoning']} est=${est:.4f}"
+            )
+
+        def _trace_model_call(index: int, resp: Any) -> None:
+            if not trace.enabled:
+                return
+            i, c, o, r = _usage_from(resp)
+            trace.model_call(index, {"input": i, "cached": c, "output": o, "reasoning": r}, resp)
+
         try:
             resp = await asyncio.to_thread(self._create, conversation_id, input=input_items)
             _track(resp)
+            call_no = 1
+            _trace_model_call(call_no, resp)
 
             for _ in range(MAX_TOOL_TURNS):
                 function_calls = [o for o in (resp.output or []) if getattr(o, "type", None) == "function_call"]
@@ -197,6 +229,21 @@ class FleetiAgent:
                     except (TypeError, ValueError):
                         call_args = {}
                     result = await execute_tool(fc.name, call_args, ctx)
+                    if trace.enabled:
+                        trace.section(f"TOOL CALL: {fc.name}")
+                        trace.block("arguments", call_args)
+                        if fc.name == "get_query_context":
+                            trace.block("schema context returned to model", result)
+                        elif fc.name == "run_fleet_query":
+                            trace.block("exact Mongo query executed", ctx.last_fleet_query or "(none)")
+                            trace.block("query result returned to model", result)
+                            if isinstance(result, dict) and result.get("rows_omitted"):
+                                trace.block(
+                                    "query result sample (first 20 of full set)",
+                                    (ctx.last_fleet_rows or [])[:20],
+                                )
+                        else:
+                            trace.block("tool result", result)
                     tool_outputs.append({
                         "type": "function_call_output",
                         "call_id": fc.call_id,
@@ -218,6 +265,11 @@ class FleetiAgent:
                     except Exception as exc:  # noqa: BLE001
                         logger.warning("[FleetiAgent] could not close report tool call on conversation: %s", exc)
                     _log_usage()
+                    if trace.enabled:
+                        trace.section("FINAL (report generated)")
+                        trace.block("report_payload", ctx.report_payload)
+                        trace.line("\n" + _trace_totals())
+                        trace.write()
                     return AgentResult(
                         report_payload=ctx.report_payload,
                         selected_collections=ctx.selected_collections,
@@ -226,6 +278,8 @@ class FleetiAgent:
                 # Continue the SAME conversation; tool outputs link to the pending calls.
                 resp = await asyncio.to_thread(self._create, conversation_id, input=tool_outputs)
                 _track(resp)
+                call_no += 1
+                _trace_model_call(call_no, resp)
 
             _log_usage()
             final_text = (getattr(resp, "output_text", "") or "").strip()
@@ -234,6 +288,14 @@ class FleetiAgent:
                     "I couldn't produce a response for that. "
                     "Please rephrase your question and try again."
                 )
+
+            if trace.enabled:
+                trace.section("FINAL RESPONSE")
+                trace.block("final_text", final_text)
+                if ctx.export_url:
+                    trace.line(f"export_url: {ctx.export_url}")
+                trace.line("\n" + _trace_totals())
+                trace.write()
 
             return AgentResult(
                 text=final_text,
@@ -245,6 +307,11 @@ class FleetiAgent:
                 export_url=ctx.export_url,
             )
         except Exception as exc:  # noqa: BLE001 - endpoint converts to a safe user message
+            if trace.enabled:
+                trace.section("ERROR")
+                trace.block("exception", f"{type(exc).__name__}: {exc}")
+                trace.line("\n" + _trace_totals())
+                trace.write()
             if _is_conversation_error(exc) or _is_stuck_tool_state(exc):
                 logger.debug("[FleetiAgent] conversation needs reset (%s): %s",
                              "stuck tool state" if _is_stuck_tool_state(exc) else "invalid", exc)

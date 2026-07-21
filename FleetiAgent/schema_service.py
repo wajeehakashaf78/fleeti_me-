@@ -197,6 +197,84 @@ _DISAMBIGUATIONS = """DISAMBIGUATIONS:
 - Per-day aggregates -> DailyAnalytics; per-trip -> Trip."""
 
 
+# ================================
+# On-demand rule packs
+# ================================
+# Exact operational definitions that are too long (and too rarely needed) to sit in the
+# always-on prompt. The MENU advertises them by name; get_query_context returns the full
+# text only when the model asks for the pack — so the cached prefix stays small.
+_RULE_PACKS_MENU = """ON-DEMAND RULE PACKS (request by name via get_query_context, exactly like a section):
+- asset_status_rules — the EXACT definitions and thresholds for a vehicle's CONNECTIVITY
+  (online / reporting / responding, offline, not reporting, not connected) and its MOVEMENT
+  (moving, idle, stopped/parked, illegal movement). Request this pack BEFORE answering ANY
+  question about those states — including counts, breakdowns, and "which vehicles are ..."
+  lists. These thresholds are NOT guessable, so never answer such a question from memory.
+  The pack also returns the Asset + AvlRecordLatest fields, joins and examples, so a single
+  get_query_context call is all you need."""
+
+
+ASSET_STATUS_RULES = """ASSET STATUS RULES — connectivity & movement (authoritative; follow exactly).
+
+SCOPE: these states apply to ACTIVE vehicles ONLY. The server already restricts every Asset
+access to active vehicles, so never add active/inactive conditions yourself. An INACTIVE
+vehicle is NOT "offline" and NOT "not connected" — it is a separate category that has already
+been excluded from your results.
+
+SOURCE: every state is read from the vehicle's AvlRecordLatest packet — exactly ONE latest
+packet per asset, so never add $sort/$limit to it — and that packet MUST be matched with
+is_processed: true (ignore unprocessed packets entirely). The packet's time field is
+`timestamp`. Join: Asset._id -> AvlRecordLatest.device_context.asset_id.
+
+CONNECTIVITY — mutually exclusive; every active vehicle is in exactly ONE of these:
+  * ONLINE (same thing as REPORTING / RESPONDING): has an is_processed packet whose
+    timestamp is within the last 80 MINUTES.
+  * OFFLINE: has an is_processed packet whose timestamp is older than 80 MINUTES but
+    within the last 24 HOURS.
+  * NOT REPORTING: has an is_processed packet whose timestamp is older than 24 HOURS.
+  * NOT CONNECTED: has NO is_processed packet in AvlRecordLatest at all.
+  OFFLINE, NOT REPORTING and NOT CONNECTED are three DIFFERENT states — never treat them as
+  synonyms, never merge them, and answer only the one the user asked about.
+
+Cutoffs — always compute from $$NOW, never from a hardcoded clock time:
+  80 minutes: {"$dateSubtract":{"startDate":"$$NOW","unit":"minute","amount":80}}
+  24 hours:   {"$dateSubtract":{"startDate":"$$NOW","unit":"hour","amount":24}}
+
+MOVEMENT — applies ONLY to ONLINE vehicles, read from that SAME latest packet's `speed` and
+`ignition_status`. ignition_status is the string "On"/"Off"; match it case-insensitively with
+{"$regex":"^on$","$options":"i"} (or "^off$"):
+  * MOVING           = speed > 0  AND ignition_status "On"
+  * IDLE             = speed == 0 AND ignition_status "On"
+  * STOPPED (parked) = speed == 0 AND ignition_status "Off"
+  * ILLEGAL MOVEMENT = speed > 0  AND ignition_status "Off"
+A vehicle that is not ONLINE has no movement state — never report it as stopped/parked.
+
+QUERY SHAPE:
+- ONLINE / OFFLINE / NOT REPORTING, and every movement state: start from Asset, $lookup
+  AvlRecordLatest (sub-pipeline matching is_processed: true), $unwind, then filter on the
+  joined packet's timestamp / speed / ignition_status.
+- ALWAYS $unwind the joined packet for those states. Do NOT read it with
+  $addFields + $first: a vehicle with no packet then yields a MISSING value, and missing
+  sorts BELOW every date, so it silently passes an "older than X" test and drags NOT
+  CONNECTED vehicles into your OFFLINE / NOT REPORTING answer. $unwind drops them cleanly.
+- NOT CONNECTED: start from Asset, $lookup AvlRecordLatest, and keep the assets whose joined
+  array is EMPTY. Do NOT start from AvlRecordLatest for this state — a vehicle with no packet
+  has no row there and could never be found."""
+
+# Names the model may use to request the status pack (normalized, so casing/underscores
+# do not matter). Matched BEFORE section resolution so they never fuzzy-match a real section.
+_STATUS_RULES_ALIASES = frozenset({
+    "assetstatusrules", "assetstatus", "statusrules", "vehiclestatusrules",
+    "connectivityrules", "assetconnectivityrules", "movementrules",
+})
+
+# Seeded into example selection whenever the pack is requested, so the status examples
+# always outrank the generic latest-telemetry ones regardless of the `intent` text.
+_STATUS_EXAMPLE_HINTS = [
+    "online", "offline", "reporting", "not-reporting", "not-connected",
+    "connectivity", "status", "moving", "idle", "stopped", "illegal-movement",
+]
+
+
 def build_menu() -> str:
     """Render the compact always-on collection menu (embedded in the tool description)."""
     lines: List[str] = ["COLLECTIONS (request sections via get_query_context):"]
@@ -212,6 +290,7 @@ def build_menu() -> str:
         if sec_parts:
             lines.append("  sections: " + " | ".join(sec_parts))
     lines.append("\n" + _DISAMBIGUATIONS)
+    lines.append("\n" + _RULE_PACKS_MENU)
     return "\n".join(lines)
 
 
@@ -224,16 +303,11 @@ RULES = """QUERY RULES:
 - TIMEZONE — emit the LOCAL wall-clock time the user means (in THEIR timezone) and do NOT convert to UTC yourself; the server converts user-local times to UTC before querying. Example: user in UTC+5 asks "from 2pm to 4pm" -> emit {"$date":"...T14:00:00Z"} and {"$date":"...T16:00:00Z"} (the server turns these into 09:00–11:00 UTC). A whole day "on 2026-06-20" -> 00:00:00 to 23:59:59 of that local date. (Relative ranges built with $$NOW are already UTC — do not adjust those.)
 - Time intent: latest/last/current -> $sort the time field desc + $limit 1; oldest/first -> asc + $limit 1; an exact time -> match a +/-5 minute window and pick the closest record. Add $sort/$limit only when ordering or a single/top-N result is implied; never for "all".
 - AvlRecord / AvlRecordLatest: ALWAYS include is_processed: true in the match — ignore unprocessed packets.
-- Reporting / connectivity status applies to ACTIVE vehicles/devices only (active = the rule below; the server already restricts Asset to active, so these states are evaluated only over active vehicles). For an ACTIVE vehicle, classify by its AvlRecordLatest packet (one latest packet per asset, is_processed: true):
-  * REPORTING = it has a latest packet AND that packet's timestamp is within the last 12 hours.
-  * NOT REPORTING = it has a latest packet, but older than 12 hours.
-  * NOT CONNECTED = it has NO AvlRecordLatest packet at all.
-  A NON-active vehicle is neither reporting nor not-reporting nor not-connected — it is simply INACTIVE / EXPIRED SUBSCRIPTION (a separate category); the server has already excluded it, so it won't appear in these results.
-  Compute the 12-hour cutoff with $$NOW: {"$dateSubtract":{"startDate":"$$NOW","unit":"hour","amount":12}}. For NOT CONNECTED, start from Asset, $lookup AvlRecordLatest, and keep assets whose joined array is empty.
+- Vehicle STATUS questions — online / reporting / responding, offline, not reporting, not connected, or moving / idle / stopped / parked / illegal movement — have EXACT definitions and time thresholds that you must NOT guess or infer. Call get_query_context with sections ["asset_status_rules"] FIRST; it returns those rules plus the fields, joins and examples you need. This applies to counts and breakdowns too (e.g. "how many vehicles are online"). These states are evaluated over ACTIVE vehicles only.
 - Joins: $lookup only to reach fields in a DIFFERENT collection; never join a collection to itself. Use the localField/foreignField from the get_query_context "joins" output.
 - Projection: always exclude _id ("_id":0) and never project any *_id field; use full paths, e.g. {"plate_number":"$details.plate_number"}.
 - Tenant: do NOT add sub_tenant_id yourself — the server injects it. If the starting collection has no sub_tenant_id of its own (Trip, DailyAnalytics), include a $lookup into a tenant-aware collection (Asset, AvlRecord, AlertHistory, AlertRule, AssetGroup, Driver, Device, Geofence) so the server can scope via the join.
-- Active vehicles only: every Asset access (any vehicle/plate question) is automatically restricted server-side to ACTIVE vehicles. A vehicle is ACTIVE when device_availability is "AssignedToDevice" AND status is "Active" OR "Maintenance" (a vehicle under maintenance still counts as active) AND expiry_date is in the future/missing/null. Any other status (Inactive, expired, Blocked, ...) or a past expiry_date means the vehicle is INACTIVE / EXPIRED SUBSCRIPTION and is excluded. Treat "vehicles" as active vehicles; do NOT add these conditions yourself. Records that link to a NON-active vehicle (e.g. alerts/events/trips whose vehicle isn't active) are EXCLUDED — the server inner-joins Asset, so such rows are dropped entirely (you won't see blank-plate orphan rows).
+- Active vehicles only: every Asset access (any vehicle/plate question) is automatically restricted server-side to ACTIVE vehicles. A vehicle is ACTIVE only when ALL THREE of these are true TOGETHER: device_availability is "AssignedToDevice" AND status is "Active" or "Maintenance" (a vehicle under maintenance still counts as active) AND it has an expiry_date that is still in the future. Anything else is INACTIVE / EXPIRED SUBSCRIPTION and is excluded — not assigned to a device, any other status (Inactive, Blocked, ...), an expiry_date already passed, or no expiry_date at all. Treat "vehicles" as active vehicles; do NOT add these conditions yourself. Records that link to a NON-active vehicle (e.g. alerts/events/trips whose vehicle isn't active) are EXCLUDED — the server inner-joins Asset, so such rows are dropped entirely (you won't see blank-plate orphan rows).
 - Data-source preference (choose silently; never ask the user which source to use):
   1. OVERALL / all-time entity KPIs come from the entity's OWN collection. For a driver's overall scores/metrics (safety score, behavior score, performance rating, all-time average speed, total trips/distance/hours, harsh-event counts) read directly from Driver.driver_analytics / Driver.analytics / Driver.behavior / Driver.performance — do NOT recompute them from Trip or DailyAnalytics.
   2. For a SPECIFIC TIME RANGE (today, yesterday, last 7 days, a date range) aggregate from Trip (per-trip rows: avg_speed, max_speed, distance_covered, duration, idle_time, safety/behaviour scores) or DailyAnalytics (per-day rows), whichever fits the metric.
@@ -300,10 +374,28 @@ EXAMPLES: List[Dict[str, Any]] = [
         "query": 'db.AlertHistory.aggregate([{"$match":{"created_at":{"$gte":{"$date":"2025-10-01T00:00:00Z"},"$lte":{"$date":"2025-10-31T23:59:59Z"}}}},{"$project":{"_id":0,"type":"$alert_info.type","alert":"$alert_info.alert_message","severity":"$alert_info.severity","timestamp":"$created_at","status":"$alert_info.status"}}])',
     },
     {
-        "tags": ["reporting", "connectivity", "status", "not-reporting", "not-connected", "avlrecordlatest", "asset"],
+        "tags": ["reporting", "connectivity", "status", "not-reporting", "avlrecordlatest", "asset"],
         "collections": ["Asset", "AvlRecord"],
-        "question": "Which vehicles are not reporting?",
-        "query": 'db.Asset.aggregate([{"$lookup":{"from":"AvlRecordLatest","let":{"aid":"$_id"},"pipeline":[{"$match":{"$expr":{"$eq":["$device_context.asset_id","$$aid"]},"is_processed":true}},{"$project":{"_id":0,"timestamp":1}}],"as":"latest"}},{"$addFields":{"last_packet":{"$first":"$latest.timestamp"}}},{"$match":{"$expr":{"$and":[{"$ne":["$last_packet",null]},{"$lt":["$last_packet",{"$dateSubtract":{"startDate":"$$NOW","unit":"hour","amount":12}}]}]}}},{"$project":{"_id":0,"plate_number":"$details.plate_number","last_reported":"$last_packet"}}])',
+        "question": "Which vehicles are not reporting? (has a packet, but older than 24 hours)",
+        "query": 'db.Asset.aggregate([{"$lookup":{"from":"AvlRecordLatest","let":{"aid":"$_id"},"pipeline":[{"$match":{"$expr":{"$eq":["$device_context.asset_id","$$aid"]},"is_processed":true}},{"$project":{"_id":0,"timestamp":1}}],"as":"latest"}},{"$unwind":"$latest"},{"$match":{"$expr":{"$lt":["$latest.timestamp",{"$dateSubtract":{"startDate":"$$NOW","unit":"hour","amount":24}}]}}},{"$project":{"_id":0,"plate_number":"$details.plate_number","last_reported":"$latest.timestamp"}}])',
+    },
+    {
+        "tags": ["offline", "connectivity", "status", "reporting", "avlrecordlatest", "asset"],
+        "collections": ["Asset", "AvlRecord"],
+        "question": "Which vehicles are offline? (last packet older than 80 minutes but within 24 hours)",
+        "query": 'db.Asset.aggregate([{"$lookup":{"from":"AvlRecordLatest","let":{"aid":"$_id"},"pipeline":[{"$match":{"$expr":{"$eq":["$device_context.asset_id","$$aid"]},"is_processed":true}},{"$project":{"_id":0,"timestamp":1}}],"as":"latest"}},{"$unwind":"$latest"},{"$match":{"$expr":{"$and":[{"$lt":["$latest.timestamp",{"$dateSubtract":{"startDate":"$$NOW","unit":"minute","amount":80}}]},{"$gte":["$latest.timestamp",{"$dateSubtract":{"startDate":"$$NOW","unit":"hour","amount":24}}]}]}}},{"$project":{"_id":0,"plate_number":"$details.plate_number","last_reported":"$latest.timestamp"}}])',
+    },
+    {
+        "tags": ["moving", "idle", "stopped", "illegal-movement", "online", "status", "connectivity", "avlrecordlatest", "asset", "count"],
+        "collections": ["Asset", "AvlRecord"],
+        "question": "How many vehicles are currently moving? (online + speed > 0 + ignition On)",
+        "query": 'db.Asset.aggregate([{"$lookup":{"from":"AvlRecordLatest","let":{"aid":"$_id"},"pipeline":[{"$match":{"$expr":{"$eq":["$device_context.asset_id","$$aid"]},"is_processed":true}},{"$project":{"_id":0,"timestamp":1,"speed":1,"ignition_status":1}}],"as":"latest"}},{"$unwind":"$latest"},{"$match":{"$expr":{"$gte":["$latest.timestamp",{"$dateSubtract":{"startDate":"$$NOW","unit":"minute","amount":80}}]},"latest.speed":{"$gt":0},"latest.ignition_status":{"$regex":"^on$","$options":"i"}}},{"$count":"moving_vehicles"}])',
+    },
+    {
+        "tags": ["not-connected", "connectivity", "status", "avlrecordlatest", "asset"],
+        "collections": ["Asset", "AvlRecord"],
+        "question": "Which vehicles are not connected? (no processed packet at all)",
+        "query": 'db.Asset.aggregate([{"$lookup":{"from":"AvlRecordLatest","let":{"aid":"$_id"},"pipeline":[{"$match":{"$expr":{"$eq":["$device_context.asset_id","$$aid"]},"is_processed":true}},{"$project":{"_id":0,"timestamp":1}}],"as":"latest"}},{"$match":{"latest":{"$eq":[]}}},{"$project":{"_id":0,"plate_number":"$details.plate_number"}}])',
     },
     {
         "tags": ["assetgroup", "group", "asset", "vehicles"],
@@ -383,6 +475,9 @@ def _resolve_sections(requested: List[str]) -> Tuple[List[str], Dict[str, List[s
         # AvlRecordLatest is handled as its own logical collection in get_query_context.
         if n in ("avlrecordlatest", "avlrecordslatest"):
             continue
+        # Rule packs are not sections; get_query_context attaches their text separately.
+        if n in _STATUS_RULES_ALIASES:
+            continue
         if n in _NORM_SECTION:  # exact section
             sec = _NORM_SECTION[n]
             if sec not in resolved:
@@ -406,8 +501,16 @@ def _resolve_sections(requested: List[str]) -> Tuple[List[str], Dict[str, List[s
 
 def get_query_context(sections: List[str], intent: Optional[str] = None) -> Dict[str, Any]:
     """Return pruned fields + relevant joins + 2-3 relevant examples for the requested sections."""
-    requested = sections or []
+    requested = list(sections or [])
     wants_latest = any(_norm(s) in ("avlrecordlatest", "avlrecordslatest") for s in requested)
+    wants_status_rules = any(_norm(s) in _STATUS_RULES_ALIASES for s in requested)
+    if wants_status_rules:
+        # Every connectivity/movement question reads the latest packet and identifies the
+        # vehicle by plate, so pull those in automatically: one call returns the rules plus
+        # the fields, joins and examples needed to write the query.
+        wants_latest = True
+        requested += ["asset_base", "asset_details_base"]
+
     resolved, extra_available = _resolve_sections(requested)
 
     # Group fields by parent collection, dedupe field lines.
@@ -441,9 +544,15 @@ def get_query_context(sections: List[str], intent: Optional[str] = None) -> Dict
     example_basis = resolved + list(requested)
     if wants_latest:
         example_basis += ["AvlRecord", "latest", "location"]
+    if wants_status_rules:
+        example_basis += _STATUS_EXAMPLE_HINTS
     examples = select_examples(example_basis, intent)
 
-    result: Dict[str, Any] = {"schemas": schemas, "joins": joins, "examples": examples}
+    result: Dict[str, Any] = {}
+    if wants_status_rules:
+        # First key so the model reads the authoritative thresholds before the schema.
+        result["asset_status_rules"] = ASSET_STATUS_RULES
+    result.update({"schemas": schemas, "joins": joins, "examples": examples})
     if extra_available:
         result["other_sections_available"] = extra_available
     return result

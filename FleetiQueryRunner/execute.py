@@ -800,12 +800,19 @@ def _enforce_starting_collection_tenant(
 # ---------------------------
 # Active-vehicle enforcement (server-side, like tenant isolation).
 # The bot only ever answers for ACTIVE vehicles, so every query that touches the
-# Asset collection (as the starting collection or via a $lookup) is restricted to:
+# Asset collection (as the starting collection or via a $lookup) is restricted to
+# active ones. A vehicle is ACTIVE only when ALL of these hold TOGETHER:
 #   device_availability == "AssignedToDevice"
-#   AND status is "Active" OR "Maintenance" (a vehicle in maintenance is still active)
-#   AND (expiry_date >= now OR expiry_date missing OR expiry_date null)
-# Any other status (Inactive, expired, Blocked, ...) or a past expiry_date means the
-# vehicle is inactive / has an expired subscription and is excluded.
+#   AND status is "Active" OR "Maintenance" (a vehicle under maintenance is still active)
+#   AND expiry_date EXISTS (non-null) AND expiry_date > now
+# Anything else is INACTIVE and excluded: not assigned to a device, any other status
+# (Inactive, Blocked, ...), a lapsed expiry_date, or NO expiry_date at all. Note that a
+# missing/null expiry_date does NOT mean "never expires" — such a vehicle is inactive,
+# because an active subscription must carry a future expiry date.
+#
+# The result is a flat filter dict (no top-level logical operator), so its keys merge
+# cleanly into any larger $match — tenant injection and the simple-form $lookup rewrite
+# below both spread extra keys alongside it — with no $or/$nor collisions.
 # Status is matched CASE-INSENSITIVELY: real data carries casing variants (e.g. the
 # lowercase "active"), so an exact "Active" match would wrongly drop those vehicles.
 # ---------------------------
@@ -819,27 +826,15 @@ def _active_asset_filter() -> Dict[str, Any]:
     return {
         "device_availability": "AssignedToDevice",
         "status": _ACTIVE_STATUS_REGEX,
-        "$or": [
-            {"expiry_date": {"$gte": now}},
-            {"expiry_date": {"$exists": False}},
-            {"expiry_date": None},
-        ],
+        "expiry_date": {"$exists": True, "$ne": None, "$gt": now},
     }
-
-
-def _subpipeline_has_active(stages: List[Any]) -> bool:
-    return any(
-        isinstance(s, dict) and isinstance(s.get("$match"), dict) and "device_availability" in s["$match"]
-        for s in stages
-    )
 
 
 def _inject_active_into_asset_lookup(lookup: Dict[str, Any]) -> Dict[str, Any]:
     """Ensure an Asset $lookup only joins active vehicles (handles pipeline & simple form)."""
     lookup = dict(lookup)
     if isinstance(lookup.get("pipeline"), list):
-        if not _subpipeline_has_active(lookup["pipeline"]):
-            lookup["pipeline"] = [{"$match": _active_asset_filter()}] + list(lookup["pipeline"])
+        lookup["pipeline"] = [{"$match": _active_asset_filter()}] + list(lookup["pipeline"])
         return lookup
     # Simple form (localField/foreignField) -> convert to pipeline form preserving the join.
     local_field = lookup.get("localField", "")
@@ -877,18 +872,21 @@ def _enforce_active_assets_on_payload(coll: str, op: str, payload: MongoPayload)
                     result.append({"$match": {as_field: {"$ne": []}}})
             else:
                 result.append(stage)
-        # Starting collection is Asset -> prepend an active-only $match (unless already present).
-        if coll == "Asset" and not _subpipeline_has_active(result):
+        # Starting collection is Asset -> prepend an active-only $match. Always injected:
+        # the filter is a $nor clause, so it cannot be recognized (or forged) by sniffing
+        # the model's own $match keys, and an extra AND is only ever more restrictive.
+        if coll == "Asset":
             result = [{"$match": _active_asset_filter()}] + result
         return result
 
     if op == "find" and coll == "Asset":
         if isinstance(payload, dict) and "filter" in payload:
             flt = payload.get("filter") or {}
-            if "device_availability" not in flt:
-                payload = {**payload, "filter": {"$and": [_active_asset_filter(), flt]} if flt else _active_asset_filter()}
-            return payload
-        if isinstance(payload, dict) and "device_availability" not in payload:
+            return {
+                **payload,
+                "filter": {"$and": [_active_asset_filter(), flt]} if flt else _active_asset_filter(),
+            }
+        if isinstance(payload, dict):
             return {"$and": [_active_asset_filter(), payload]} if payload else _active_asset_filter()
 
     return payload

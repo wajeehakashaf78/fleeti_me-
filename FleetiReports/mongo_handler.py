@@ -20,19 +20,21 @@ def print(*args: Any, **kwargs: Any) -> None:
 
 
 def _active_asset_match() -> Dict[str, Any]:
-    """Active-vehicle conditions (mirrors FleetiQueryRunner.execute._active_asset_filter):
-    only assets assigned to a device, status Active OR Maintenance, and not expired.
+    """Active-vehicle conditions (mirrors FleetiQueryRunner.execute._active_asset_filter —
+    keep the two in sync).
+
+    A vehicle is ACTIVE only when ALL of these hold together: it is assigned to a device
+    AND its status is "Active" or "Maintenance" AND it has a non-null expiry_date in the
+    future. Anything else is inactive — including a vehicle with NO expiry_date, since an
+    active subscription must carry a future expiry date.
+    Kept as a flat dict so callers can spread it into a larger $match.
     Status is matched case-insensitively (real data has casing variants like "active");
     the anchored regex keeps Inactive/expired/Blocked excluded."""
     now = datetime.now(timezone.utc)
     return {
         "device_availability": "AssignedToDevice",
         "status": {"$regex": r"^(active|maintenance)$", "$options": "i"},
-        "$or": [
-            {"expiry_date": {"$gte": now}},
-            {"expiry_date": {"$exists": False}},
-            {"expiry_date": None},
-        ],
+        "expiry_date": {"$exists": True, "$ne": None, "$gt": now},
     }
 
 
