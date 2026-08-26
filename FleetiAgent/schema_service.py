@@ -227,17 +227,17 @@ is_processed: true (ignore unprocessed packets entirely). The packet's time fiel
 
 CONNECTIVITY — mutually exclusive; every active vehicle is in exactly ONE of these:
   * ONLINE (same thing as REPORTING / RESPONDING): has an is_processed packet whose
-    timestamp is within the last 80 MINUTES.
-  * OFFLINE: has an is_processed packet whose timestamp is older than 80 MINUTES but
-    within the last 24 HOURS.
-  * NOT REPORTING: has an is_processed packet whose timestamp is older than 24 HOURS.
+    timestamp is within the last 30 MINUTES.
+  * OFFLINE: has an is_processed packet whose timestamp is older than 30 MINUTES but
+    within the last 12 HOURS.
+  * NOT REPORTING: has an is_processed packet whose timestamp is older than 12 HOURS.
   * NOT CONNECTED: has NO is_processed packet in AvlRecordLatest at all.
   OFFLINE, NOT REPORTING and NOT CONNECTED are three DIFFERENT states — never treat them as
   synonyms, never merge them, and answer only the one the user asked about.
 
 Cutoffs — always compute from $$NOW, never from a hardcoded clock time:
-  80 minutes: {"$dateSubtract":{"startDate":"$$NOW","unit":"minute","amount":80}}
-  24 hours:   {"$dateSubtract":{"startDate":"$$NOW","unit":"hour","amount":24}}
+  30 minutes: {"$dateSubtract":{"startDate":"$$NOW","unit":"minute","amount":30}}
+  12 hours:   {"$dateSubtract":{"startDate":"$$NOW","unit":"hour","amount":12}}
 
 MOVEMENT — applies ONLY to ONLINE vehicles, read from that SAME latest packet's `speed` and
 `ignition_status`. ignition_status is the string "On"/"Off"; match it case-insensitively with
@@ -307,7 +307,7 @@ RULES = """QUERY RULES:
 - Joins: $lookup only to reach fields in a DIFFERENT collection; never join a collection to itself. Use the localField/foreignField from the get_query_context "joins" output.
 - Projection: always exclude _id ("_id":0) and never project any *_id field; use full paths, e.g. {"plate_number":"$details.plate_number"}.
 - Tenant: do NOT add sub_tenant_id yourself — the server injects it. If the starting collection has no sub_tenant_id of its own (Trip, DailyAnalytics), include a $lookup into a tenant-aware collection (Asset, AvlRecord, AlertHistory, AlertRule, AssetGroup, Driver, Device, Geofence) so the server can scope via the join.
-- Active vehicles only: every Asset access (any vehicle/plate question) is automatically restricted server-side to ACTIVE vehicles. A vehicle is ACTIVE only when ALL THREE of these are true TOGETHER: device_availability is "AssignedToDevice" AND status is "Active" or "Maintenance" (a vehicle under maintenance still counts as active) AND it has an expiry_date that is still in the future. Anything else is INACTIVE / EXPIRED SUBSCRIPTION and is excluded — not assigned to a device, any other status (Inactive, Blocked, ...), an expiry_date already passed, or no expiry_date at all. Treat "vehicles" as active vehicles; do NOT add these conditions yourself. Records that link to a NON-active vehicle (e.g. alerts/events/trips whose vehicle isn't active) are EXCLUDED — the server inner-joins Asset, so such rows are dropped entirely (you won't see blank-plate orphan rows).
+- Active vehicles only: every Asset access (any vehicle/plate question) is automatically restricted server-side to ACTIVE vehicles. A vehicle is ACTIVE only when ALL of these are true TOGETHER: device_availability is "AssignedToDevice" AND status is "Active" or "Maintenance" (a vehicle under maintenance still counts as active) AND it has a real device IMEI AND it has an expiry_date that is still in the future. Anything else is INACTIVE / EXPIRED SUBSCRIPTION and is excluded — not assigned to a device, any other status (Inactive, Blocked, ...), no device IMEI, an expiry_date already passed, or no expiry_date at all. Expired vehicles must never appear in any answer. Treat "vehicles" as active vehicles; do NOT add these conditions yourself. Records that link to a NON-active vehicle (e.g. alerts/events/trips whose vehicle isn't active) are EXCLUDED — the server inner-joins Asset, so such rows are dropped entirely (you won't see blank-plate orphan rows).
 - Data-source preference (choose silently; never ask the user which source to use):
   1. OVERALL / all-time entity KPIs come from the entity's OWN collection. For a driver's overall scores/metrics (safety score, behavior score, performance rating, all-time average speed, total trips/distance/hours, harsh-event counts) read directly from Driver.driver_analytics / Driver.analytics / Driver.behavior / Driver.performance — do NOT recompute them from Trip or DailyAnalytics.
   2. For a SPECIFIC TIME RANGE (today, yesterday, last 7 days, a date range) aggregate from Trip (per-trip rows: avg_speed, max_speed, distance_covered, duration, idle_time, safety/behaviour scores) or DailyAnalytics (per-day rows), whichever fits the metric.
@@ -376,20 +376,20 @@ EXAMPLES: List[Dict[str, Any]] = [
     {
         "tags": ["reporting", "connectivity", "status", "not-reporting", "avlrecordlatest", "asset"],
         "collections": ["Asset", "AvlRecord"],
-        "question": "Which vehicles are not reporting? (has a packet, but older than 24 hours)",
-        "query": 'db.Asset.aggregate([{"$lookup":{"from":"AvlRecordLatest","let":{"aid":"$_id"},"pipeline":[{"$match":{"$expr":{"$eq":["$device_context.asset_id","$$aid"]},"is_processed":true}},{"$project":{"_id":0,"timestamp":1}}],"as":"latest"}},{"$unwind":"$latest"},{"$match":{"$expr":{"$lt":["$latest.timestamp",{"$dateSubtract":{"startDate":"$$NOW","unit":"hour","amount":24}}]}}},{"$project":{"_id":0,"plate_number":"$details.plate_number","last_reported":"$latest.timestamp"}}])',
+        "question": "Which vehicles are not reporting? (has a packet, but older than 12 hours)",
+        "query": 'db.Asset.aggregate([{"$lookup":{"from":"AvlRecordLatest","let":{"aid":"$_id"},"pipeline":[{"$match":{"$expr":{"$eq":["$device_context.asset_id","$$aid"]},"is_processed":true}},{"$project":{"_id":0,"timestamp":1}}],"as":"latest"}},{"$unwind":"$latest"},{"$match":{"$expr":{"$lt":["$latest.timestamp",{"$dateSubtract":{"startDate":"$$NOW","unit":"hour","amount":12}}]}}},{"$project":{"_id":0,"plate_number":"$details.plate_number","last_reported":"$latest.timestamp"}}])',
     },
     {
         "tags": ["offline", "connectivity", "status", "reporting", "avlrecordlatest", "asset"],
         "collections": ["Asset", "AvlRecord"],
-        "question": "Which vehicles are offline? (last packet older than 80 minutes but within 24 hours)",
-        "query": 'db.Asset.aggregate([{"$lookup":{"from":"AvlRecordLatest","let":{"aid":"$_id"},"pipeline":[{"$match":{"$expr":{"$eq":["$device_context.asset_id","$$aid"]},"is_processed":true}},{"$project":{"_id":0,"timestamp":1}}],"as":"latest"}},{"$unwind":"$latest"},{"$match":{"$expr":{"$and":[{"$lt":["$latest.timestamp",{"$dateSubtract":{"startDate":"$$NOW","unit":"minute","amount":80}}]},{"$gte":["$latest.timestamp",{"$dateSubtract":{"startDate":"$$NOW","unit":"hour","amount":24}}]}]}}},{"$project":{"_id":0,"plate_number":"$details.plate_number","last_reported":"$latest.timestamp"}}])',
+        "question": "Which vehicles are offline? (last packet older than 30 minutes but within 12 hours)",
+        "query": 'db.Asset.aggregate([{"$lookup":{"from":"AvlRecordLatest","let":{"aid":"$_id"},"pipeline":[{"$match":{"$expr":{"$eq":["$device_context.asset_id","$$aid"]},"is_processed":true}},{"$project":{"_id":0,"timestamp":1}}],"as":"latest"}},{"$unwind":"$latest"},{"$match":{"$expr":{"$and":[{"$lt":["$latest.timestamp",{"$dateSubtract":{"startDate":"$$NOW","unit":"minute","amount":30}}]},{"$gte":["$latest.timestamp",{"$dateSubtract":{"startDate":"$$NOW","unit":"hour","amount":12}}]}]}}},{"$project":{"_id":0,"plate_number":"$details.plate_number","last_reported":"$latest.timestamp"}}])',
     },
     {
         "tags": ["moving", "idle", "stopped", "illegal-movement", "online", "status", "connectivity", "avlrecordlatest", "asset", "count"],
         "collections": ["Asset", "AvlRecord"],
         "question": "How many vehicles are currently moving? (online + speed > 0 + ignition On)",
-        "query": 'db.Asset.aggregate([{"$lookup":{"from":"AvlRecordLatest","let":{"aid":"$_id"},"pipeline":[{"$match":{"$expr":{"$eq":["$device_context.asset_id","$$aid"]},"is_processed":true}},{"$project":{"_id":0,"timestamp":1,"speed":1,"ignition_status":1}}],"as":"latest"}},{"$unwind":"$latest"},{"$match":{"$expr":{"$gte":["$latest.timestamp",{"$dateSubtract":{"startDate":"$$NOW","unit":"minute","amount":80}}]},"latest.speed":{"$gt":0},"latest.ignition_status":{"$regex":"^on$","$options":"i"}}},{"$count":"moving_vehicles"}])',
+        "query": 'db.Asset.aggregate([{"$lookup":{"from":"AvlRecordLatest","let":{"aid":"$_id"},"pipeline":[{"$match":{"$expr":{"$eq":["$device_context.asset_id","$$aid"]},"is_processed":true}},{"$project":{"_id":0,"timestamp":1,"speed":1,"ignition_status":1}}],"as":"latest"}},{"$unwind":"$latest"},{"$match":{"$expr":{"$gte":["$latest.timestamp",{"$dateSubtract":{"startDate":"$$NOW","unit":"minute","amount":30}}]},"latest.speed":{"$gt":0},"latest.ignition_status":{"$regex":"^on$","$options":"i"}}},{"$count":"moving_vehicles"}])',
     },
     {
         "tags": ["not-connected", "connectivity", "status", "avlrecordlatest", "asset"],

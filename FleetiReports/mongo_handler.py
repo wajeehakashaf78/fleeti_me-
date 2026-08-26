@@ -24,16 +24,16 @@ def _active_asset_match() -> Dict[str, Any]:
     keep the two in sync).
 
     A vehicle is ACTIVE only when ALL of these hold together: it is assigned to a device
-    AND its status is "Active" or "Maintenance" AND it has a non-null expiry_date in the
-    future. Anything else is inactive — including a vehicle with NO expiry_date, since an
-    active subscription must carry a future expiry date.
-    Kept as a flat dict so callers can spread it into a larger $match.
-    Status is matched case-insensitively (real data has casing variants like "active");
-    the anchored regex keeps Inactive/expired/Blocked excluded."""
+    AND its status is "Active" or "Maintenance" AND it has a real (non-blank) device IMEI
+    AND it has a non-null expiry_date in the future. Anything else is inactive — including a
+    vehicle with NO expiry_date or NO device IMEI. Matches the portal's active-assets query
+    exactly (same case-sensitive status values) so counts agree with the dashboard.
+    Kept as a flat dict (status via $in) so callers can spread it into a larger $match."""
     now = datetime.now(timezone.utc)
     return {
         "device_availability": "AssignedToDevice",
-        "status": {"$regex": r"^(active|maintenance)$", "$options": "i"},
+        "status": {"$in": ["Active", "Maintenance"]},
+        "device_details.imei": {"$exists": True, "$ne": None, "$not": {"$regex": r"^\s*$"}},
         "expiry_date": {"$exists": True, "$ne": None, "$gt": now},
     }
 

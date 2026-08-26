@@ -804,28 +804,32 @@ def _enforce_starting_collection_tenant(
 # active ones. A vehicle is ACTIVE only when ALL of these hold TOGETHER:
 #   device_availability == "AssignedToDevice"
 #   AND status is "Active" OR "Maintenance" (a vehicle under maintenance is still active)
+#   AND device_details.imei EXISTS, is non-null, and is not blank/whitespace (a real device)
 #   AND expiry_date EXISTS (non-null) AND expiry_date > now
 # Anything else is INACTIVE and excluded: not assigned to a device, any other status
-# (Inactive, Blocked, ...), a lapsed expiry_date, or NO expiry_date at all. Note that a
-# missing/null expiry_date does NOT mean "never expires" — such a vehicle is inactive,
+# (Inactive, Blocked, ...), no device IMEI, a lapsed expiry_date, or NO expiry_date at all.
+# A missing/null expiry_date does NOT mean "never expires" — such a vehicle is inactive,
 # because an active subscription must carry a future expiry date.
 #
-# The result is a flat filter dict (no top-level logical operator), so its keys merge
+# This mirrors the portal's own active-assets query EXACTLY (same predicates, same
+# case-sensitive status match) so FLEETI's active count agrees with the portal dashboard.
+# Kept as a flat filter dict (status via $in, not a top-level $or) so its keys merge
 # cleanly into any larger $match — tenant injection and the simple-form $lookup rewrite
-# below both spread extra keys alongside it — with no $or/$nor collisions.
-# Status is matched CASE-INSENSITIVELY: real data carries casing variants (e.g. the
-# lowercase "active"), so an exact "Active" match would wrongly drop those vehicles.
+# below both spread extra keys alongside it — with no top-level operator collisions.
 # ---------------------------
 
-# Anchored so "Inactive" / "expired" / "Blocked" never match.
-_ACTIVE_STATUS_REGEX = {"$regex": r"^(active|maintenance)$", "$options": "i"}
+# Exact status values that count as active (case-sensitive, to match the portal query).
+_ACTIVE_STATUSES = ["Active", "Maintenance"]
+# Matches an empty / whitespace-only IMEI; used under $not to require a real device id.
+_BLANK_IMEI_REGEX = r"^\s*$"
 
 
 def _active_asset_filter() -> Dict[str, Any]:
     now = datetime.now(timezone.utc)
     return {
         "device_availability": "AssignedToDevice",
-        "status": _ACTIVE_STATUS_REGEX,
+        "status": {"$in": _ACTIVE_STATUSES},
+        "device_details.imei": {"$exists": True, "$ne": None, "$not": {"$regex": _BLANK_IMEI_REGEX}},
         "expiry_date": {"$exists": True, "$ne": None, "$gt": now},
     }
 
