@@ -1,0 +1,34 @@
+Collection: Driver
+Purpose: Drivers: profile, vehicle assignments, license/visa/medical, compliance, analytics.
+Use for: Driver name, assignment to a vehicle, overall safety/behavior KPIs, compliance docs.
+Do not confuse with: Not per-trip stats (Trip). Not live location of the driver (comes via AvlRecord on the assigned vehicle).
+Tenant field: yes (sub_tenant_id)
+IDs: _id (driver id); profile.first_name + profile.last_name; asset_assignments[]._id (->Asset._id)
+Default sections: Driver_base, Driver_Profile
+Hidden fields: medical.blood_type, medical.allergies, medical.medications, medical.medicial_certification
+Notes:
+- Vehicle link: asset_assignments[]._id = Asset._id (use the latest assignment for current driver-of-vehicle).
+- Overall KPIs are in driver_analytics (do not recompute from Trip for "overall" questions).
+- Name = profile.first_name + profile.last_name.
+Sections:
+- Driver_base: core identity
+- Driver_Profile: full personal/professional profile
+- Driver_address_contact
+- Driver_analytics: OVERALL/all-time driver KPIs (safety_score, behavior_score, avg_speed, total_trips/distance/hours, harsh-event counts) - use for 'overall'/all-time, do not recompute from Trip/DailyAnalytics
+- Driver_asset_assignments: driver<->vehicle assignments (use latest for driver-of-vehicle)
+- Driver_behavior: overall behavior scores (risk, compliance, fatigue)
+- Driver_compliance
+- Driver_emergency
+- Driver_employment
+- Driver_financial
+- Driver_license: license issue/expiry/status
+- Driver_medical: medical certificate expiry/status, fitness for duty (health details are private)
+- Driver_performance: overall performance ratings (overall_rating, safety_score, efficiency)
+- Driver_preferences
+- Driver_status
+- Driver_visa: visa/work-permit
+- Driver_wasl_logs: WASL (Saudi) compliance logs
+- Driver_extra: other fields (audit: created/updated by/at, and less common fields)
+Indexes:
+- sub_tenant_id + asset_assignments._id
+- sub_tenant_id + driver_analytics.avg_safety_score

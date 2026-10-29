@@ -1,0 +1,5 @@
+Collection: Trip
+Fields:
+- created_by: string (user who created the record)
+- updated_at: BSON Date (when the record was last changed)
+- updated_by: string (user who last changed the record)

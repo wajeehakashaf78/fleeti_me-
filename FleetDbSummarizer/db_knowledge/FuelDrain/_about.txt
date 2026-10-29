@@ -1,0 +1,13 @@
+Collection: FuelDrain
+Purpose: Detected fuel DROP / possible theft events (litres drained) keyed by imei.
+Use for: Sudden fuel loss between start_ts and stop_ts.
+Do not confuse with: Not refills. Same join path as FuelRefill (imei).
+Tenant field: no - scope through a join to a tenant-aware collection (Asset / Device / Driver)
+IDs: imei (->Device.imei / Asset.device_details.imei); time = start_ts
+Default sections: FuelDrain_base
+Notes:
+- Unique on (imei, start_ts). Same join path as FuelRefill.
+Sections:
+- FuelDrain_base
+Indexes:
+- imei + start_ts (unique)

@@ -1,0 +1,20 @@
+Collection: WaslPacket
+Fields:
+- _id: uuid
+- imei: string
+- avl_record_id: string (links to AvlRecord._id)
+- timestamp: BSON Date
+- asset_name: null
+- wasl_location_data.activity: string
+- wasl_location_data.vehicle_location.reference_key: string
+- wasl_location_data.vehicle_location.driver_reference_key: string
+- wasl_location_data.vehicle_location.latitude: float
+- wasl_location_data.vehicle_location.longitude: float
+- wasl_location_data.vehicle_location.velocity: float
+- wasl_location_data.vehicle_location.vehicle_status: string
+- wasl_location_data.vehicle_location.location_time: string (string time of the location)
+- wasl_response: string (WASL accept/reject text)
+- created_at: BSON Date
+- wasl_request_time: BSON Date
+- wasl_response_time: BSON Date
+- wasl_location_data.vehicle_location.address: string

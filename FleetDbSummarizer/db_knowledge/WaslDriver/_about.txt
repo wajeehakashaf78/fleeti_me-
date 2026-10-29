@@ -1,0 +1,19 @@
+Collection: WaslDriver
+Purpose: Saudi WASL driver registration attempts - national ID, DOB, mobile, link to Fleeti Driver via driver_id.
+Use for: Driver WASL registration status, identity validation failures, link back to Driver.
+Do not confuse with: Not the full driver profile (Driver). Not trip/driver analytics.
+Tenant field: yes (sub_tenant_id)
+IDs: driver_id (->Driver._id); WASL key (->Device.wasl.driver_wasl_key)
+Default sections: WaslDriver_base
+Enums:
+- reply: Failed (every row)
+- status: Inactive (every row)
+- response: duplicate | identityNumber is not valid | mobileNumber must not be null | wrong_id_or_date_of_birth | No response received (seen)
+Notes:
+- This collection only keeps FAILED driver registration attempts. A registered driver has Driver.wasl_logs.wasl_driver_key set.
+- driver_id links to Driver._id.
+- Registration outcome in reply / response / status.
+- Related cache may appear on Driver.wasl_logs and Device.wasl.driver_wasl_key.
+Sections:
+- WaslDriver_base
+- WaslDriver_extra: other fields (audit: created/updated by/at, and less common fields)

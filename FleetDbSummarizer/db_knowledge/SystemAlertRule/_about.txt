@@ -1,0 +1,11 @@
+Collection: SystemAlertRule
+Purpose: System event DEFINITIONS/thresholds (idling, harsh_*, over_speeding, etc.). Event logs live in AlertHistory (alert_info.type='systemAlert').
+Use for: What threshold triggers a system event (speed limit, idle time, harsh deltas) and whether it is enabled.
+Do not confuse with: Not the events themselves (AlertHistory).
+Tenant field: yes (sub_tenant_id)
+IDs: _id; event_type
+Default sections: SystemAlertRule_base
+Enums:
+- event_type: idling | over_speeding | harsh_acceleration | harsh_braking | harsh_cornering | sharp_turn | sudden_stop | zigzag_driving | frequent_start_stop | long_continuous_driving | driving_without_gps | driving_with_low_battery
+Sections:
+- SystemAlertRule_base: event_type + per-event thresholds (time_interval, speed_limit, delta_*, etc.), is_enabled

@@ -1,8 +1,0 @@
-Collection: Asset
-Fields:
-- details.document_status_flags.mvpi_expiry: BSON Date|null
-- details.document_status_flags.istimara_expiry: BSON Date|null
-- details.document_status_flags.operation_card_expiry: BSON Date|null
-- details.document_status_flags.insurance_expiry: BSON Date|null
-- details.document_status_flags.barrier_certificate_expiry: BSON Date|null
-

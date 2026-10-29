@@ -1,0 +1,5 @@
+Collection: Driver
+Fields:
+- _id: uuid (driver identifier)
+- sub_tenant_id: string
+- created_at: BSON Date

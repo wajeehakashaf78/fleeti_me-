@@ -1,0 +1,9 @@
+Collection: AlertRule
+Fields:
+- assigned_assets: array<object> (assets this rule monitors)
+- assigned_assets[].alert_rule_id: string (= AlertRule._id)
+- assigned_assets[].asset_id: string (links to Asset._id - join for asset details/plate)
+- assigned_assets[].created_at: BSON Date
+- assigned_asset_groups: array<object> (asset groups this rule monitors)
+- assigned_asset_groups[].group_id: string (links to AssetGroup._id - join for group/asset details)
+- assigned_assets[].asset_name: string (vehicle name)

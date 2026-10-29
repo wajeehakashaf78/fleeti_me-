@@ -1,0 +1,20 @@
+Collection: WaslVehicle
+Purpose: Saudi WASL vehicle registration attempts - plate, IMEI, activity, and wasl_asset_key when registration succeeds.
+Use for: Is this plate/IMEI registered on WASL? Registration reply/response errors (e.g. vehicle_not_found).
+Do not confuse with: Not the Fleeti Asset master (Asset). Not live location (AvlRecord / WaslPacket).
+Tenant field: yes (sub_tenant_id)
+IDs: imei_no (->Device.imei); plate_no; wasl_asset_key (->Device.wasl.asset_wasl_key)
+Default sections: WaslVehicle_base
+Enums:
+- reply: Failed (every row)
+- status: Inactive (every row)
+- response: duplicate | duplicate_imei_number | vehicle_not_found | operating_company_not_found | vehicle_color_not_allowed | trackingDevice must not be null (seen)
+- activity: DEFAULT | SPECIALITY_TRANSPORT | MOTORCYCLE_DELIVERY | TOW_CAR | EDUCATIONAL_TRANSPORT
+Notes:
+- This collection only keeps FAILED registration attempts (every row: reply=Failed, status=Inactive). response says why it failed.
+- A vehicle that IS registered on WASL: Device.wasl.asset_wasl_key is non-empty (also Asset.details.custom_optional.register_on_wasl = true).
+- Join fleet vehicle via imei_no = Device.imei / Asset.device_details.imei, or plate ~ Asset plate.
+- Successful key is often mirrored on Device.wasl.asset_wasl_key.
+Sections:
+- WaslVehicle_base
+- WaslVehicle_extra: other fields (audit: created/updated by/at, and less common fields)

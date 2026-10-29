@@ -1,0 +1,41 @@
+Collection: Asset
+Purpose: Vehicles/assets: identity, specs, documents/expiry, device link.
+Use for: Plate lookup, active/inactive fleet list, vehicle specs, document expiry flags, device link.
+Do not confuse with: Not live GPS (that is AvlRecordLatest). Not trips (Trip). Not the physical tracker record (Device).
+Tenant field: yes (sub_tenant_id)
+IDs: _id (asset id); details.plate_number; device_details.imei (->Device.imei)
+Default sections: asset_base, asset_details_base
+Enums:
+- status: Active | Blocked | Inactive | Maintenance | Migrated
+- device_availability: AssignedToDevice | AvailableForDevice
+- availability: Assigned | Available
+- installation_type: Basic | PTA | SpecializedPTA
+- details.plate_type: Private | PrivateCar | PrivateTransport | PublicTransport | HeavyEquipment (seen)
+- details.vehicle_type: Car | PickUp | 3Ton PickUp | Van | Truck | Trailer | Tanker | SchoolBus | Generator | Fleet (seen)
+- details.custom_optional.register_on_wasl: true | false
+Notes:
+- Plate number lives at details.plate_number (not top-level).
+- Fleeti "active vehicle" = AssignedToDevice + status Active/Maintenance + real device_details.imei + expiry_date in the future.
+Sections:
+- asset_base: name, status, availability, created_at, expiry_date, renewal_date
+- asset_details_base: plate_number, plate_type, vehicle_type, fleet_type, make, model, VIN, fuel_type, odometer
+- asset_details_cargo_load_management
+- asset_details_cost_finance
+- asset_details_custom_optional
+- asset_details_document_status_flags: insurance/istimara/mvpi/operation-card/barrier-cert expiry & status
+- asset_details_maintenance_logs
+- asset_details_ownership_operations
+- asset_details_safety_security
+- asset_details_special_equipment
+- asset_details_vehicle_capacity_specialization
+- asset_device_details: device_details.imei (->Device.imei), group_id (->AssetGroup._id), group_name, device_name
+- asset_extra: other fields (audit: created/updated by/at, and less common fields)
+Indexes:
+- device_availability + status + device_details.imei + sub_tenant_id
+- expiry_date
+- renewal_date
+- installation_date
+- sub_tenant_id + expiry_date
+- sub_tenant_id + renewal_date
+- sub_tenant_id + installation_date
+- device_availability + status + device_details.imei

@@ -1,0 +1,11 @@
+Collection: ColdChainRecordLatest
+Fields:
+- all_io_elements: usually null (every raw IO element of the packet (large; prefer the named fields))
+- crash_trace: array (crash-detection trace samples)
+- g_sensor: array (accelerometer (g-sensor) samples)
+- group_size: int (number of packets in the device's upload batch)
+- is_wrong: bool (true = packet flagged invalid by the parser)
+- packet_index: int (position of the packet inside the device's upload batch)
+- priority: int (packet priority from the device: 0 low, 1 high, 2 panic)
+- raw_packet: string (original raw packet as received from the device (large; debugging only))
+- tenant: string (host / account label string - NOT the tenant filter (that is sub_tenant_id, applied by the server))

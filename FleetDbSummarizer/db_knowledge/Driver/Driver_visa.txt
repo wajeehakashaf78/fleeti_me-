@@ -1,0 +1,8 @@
+Collection: Driver
+Fields:
+- visa.visa_type: int
+- visa.issuing_country: string
+- visa.issue_date: BSON Date
+- visa.expiry_date: BSON Date
+- visa.status: int
+- visa.visa_image: string

@@ -1,0 +1,4 @@
+Collection: Geofence
+Fields:
+- created_by: string (user who created the record)
+- updated_by: string or null (user who last changed the record)

@@ -34,6 +34,7 @@ from FleetiCommon import (
     report_outcome_status,
 )
 from FleetiAgent.schema_service import build_menu, get_query_context, RULES
+from FleetiAgent.context_memory import MEMORY
 from FleetiAgent.prompts import SUPPORTED_REPORT_TYPES, canonicalize_report_type
 
 logger = logging.getLogger(__name__)
@@ -177,6 +178,8 @@ class ToolContext:
     time_zone: Optional[str]
     remove_sub_tenant_match: bool
     user_question: str = ""
+    conversation_id: str = ""  # OpenAI conversation; keys the "already given" context memory
+    turn_index: int = 0        # turn number within that conversation
 
     # captured side-effects (read by the endpoint after the run)
     used_fleet_query: bool = False
@@ -211,7 +214,10 @@ TOOL_DEFINITIONS: List[Dict[str, Any]] = [
         "description": (
             "Fetch the exact schema fields, join hints, and 2-3 relevant query examples for the "
             "fleet collections/sections you need — call this BEFORE run_fleet_query. Request "
-            "sections by name, or a top-level collection name. Use this menu to choose:\n\n"
+            "sections by name, or a top-level collection name. Within one conversation, fields, "
+            "joins and examples you already received are not repeated (marked 'given earlier') — "
+            "reuse them from the earlier result; pass refresh: true only if you no longer have "
+            "them. Use this menu to choose:\n\n"
             + build_menu()
         ),
         "parameters": {
@@ -228,6 +234,10 @@ TOOL_DEFINITIONS: List[Dict[str, Any]] = [
                 "intent": {
                     "type": "string",
                     "description": "Short description of what you're trying to query (used to pick relevant examples).",
+                },
+                "refresh": {
+                    "type": "boolean",
+                    "description": "true = resend everything, including items already given earlier in this conversation.",
                 },
             },
             "required": ["sections"],
@@ -423,7 +433,8 @@ def _tool_get_query_context(args: Dict[str, Any], ctx: ToolContext) -> Dict[str,
     intent = args.get("intent")
 
     ctx.selected_collections = list(sections)
-    return get_query_context(sections, intent)
+    memory = MEMORY.view(ctx.conversation_id, ctx.turn_index, refresh=bool(args.get("refresh")))
+    return get_query_context(sections, intent, question=ctx.user_question, memory=memory)
 
 
 def _tool_run_fleet_query(args: Dict[str, Any], ctx: ToolContext) -> Dict[str, Any]:

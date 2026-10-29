@@ -95,6 +95,7 @@ class AgentResult:
     error: bool = False
     conversation_invalid: bool = False  # endpoint should re-seed a fresh conversation and retry
     export_url: Optional[str] = None  # download link when the model exported results to xlsx
+    usage: Dict[str, int] = field(default_factory=dict)  # token usage of this turn (measurement)
 
 
 class FleetiAgent:
@@ -131,6 +132,7 @@ class FleetiAgent:
         authorization: Optional[str],
         time_zone: Optional[str],
         remove_sub_tenant_match: bool,
+        turn_index: int = 0,
     ) -> AgentResult:
         if self.client is None:
             return AgentResult(text="The assistant is not configured correctly.", error=True)
@@ -143,6 +145,8 @@ class FleetiAgent:
             time_zone=time_zone,
             remove_sub_tenant_match=remove_sub_tenant_match,
             user_question=user_message,
+            conversation_id=conversation_id,
+            turn_index=turn_index,
         )
 
         logger.info(
@@ -273,6 +277,7 @@ class FleetiAgent:
                     return AgentResult(
                         report_payload=ctx.report_payload,
                         selected_collections=ctx.selected_collections,
+                        usage=dict(usage),
                     )
 
                 # Continue the SAME conversation; tool outputs link to the pending calls.
@@ -305,6 +310,7 @@ class FleetiAgent:
                 last_fleet_rows=ctx.last_fleet_rows,
                 selected_collections=ctx.selected_collections,
                 export_url=ctx.export_url,
+                usage=dict(usage),
             )
         except Exception as exc:  # noqa: BLE001 - endpoint converts to a safe user message
             if trace.enabled:

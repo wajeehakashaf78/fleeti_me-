@@ -1,0 +1,9 @@
+Collection: Asset
+Fields:
+- details.cargo_load_management.cargo_type_authorization: string|null
+- details.cargo_load_management.max_permitted_load: int|null
+- details.cargo_load_management.avg_load_utilization: float|null
+- details.cargo_load_management.reefer_cargo_min_temp_range: float|null
+- details.cargo_load_management.reefer_cargo_max_temp_range: float|null
+- details.cargo_load_management.last_cargo_inspection_date: BSON Date|null
+- details.cargo_load_management.cargo_insurance_policy_id: string

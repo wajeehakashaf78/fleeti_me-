@@ -1,0 +1,16 @@
+Collection: Asset
+Fields:
+- details.cost_finance.vehicle_purchase_price: float|null
+- details.cost_finance.vehicle_purchase_date: BSON Date|null
+- details.cost_finance.lease_terms_provider: string|null
+- details.cost_finance.monthly_lease_amount: float|null
+- details.cost_finance.depreciate_value: float|null
+- details.cost_finance.fuel_card_assigned: bool
+- details.cost_finance.fuel_card_number: string
+- details.cost_finance.fuel_cost_per_month: float|null
+- details.cost_finance.insurance_policy_number: string
+- details.cost_finance.insurance_provider: string
+- details.cost_finance.insurance_expiry: BSON Date|null
+- details.cost_finance.warranty_date: BSON Date|null
+- details.cost_finance.tolls: float|null
+- details.cost_finance.nfc_tag: string

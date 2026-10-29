@@ -1,0 +1,22 @@
+Collection: AlertRule
+Purpose: User alert-rule DEFINITIONS/config (trigger logs live in AlertHistory). system_alert_rule=true marks system rules.
+Use for: Which rules exist, their conditions, thresholds, schedules and which assets/groups they watch.
+Do not confuse with: Not the triggered events (AlertHistory).
+Tenant field: yes (sub_tenant_id)
+IDs: _id (->AlertHistory.alert_info.alert_rule_id); basic_info.rule_name
+Default sections: AlertRule_base
+Enums:
+- status: Active | Inactive
+- basic_info.severity: Critical | Warning | Info
+- condition.condition_category: ValueBased | EventBased | Logical | SystemOrHardware
+- condition.event_based_conditions.geofence_type: Entry | Exit
+- schedule.type: AlwaysActive | ActiveTimeWindow
+- trigger.trigger_frequency: EveryTimeConditionIsMet | OnStateChangedNormalToAlert | OncePerDefinedPeriod
+- notifications.notification_actions: Email | SMS | PushNotification | ShowWindowsPopup | Webhook
+Sections:
+- AlertRule_base: status, priority, system_alert_rule, basic_info.rule_name/description/severity/enable_rule
+- AlertRule_assigned_assets: assigned_assets[].asset_id + assigned_asset_groups[].group_id monitored by the rule
+- AlertRule_condition: value/event/logic/system based conditions & thresholds
+- AlertRule_notifications
+- AlertRule_schedule
+- AlertRule_trigger

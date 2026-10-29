@@ -111,6 +111,43 @@ class FleetiHistorySaver:
 
         return items
 
+    def build_carryover_note(
+        self,
+        session_doc: Optional[Dict[str, Any]],
+        turns: int = 3,
+        max_answer_chars: int = 600,
+        max_query_chars: int = 400,
+    ) -> Optional[str]:
+        """
+        Short recap of the last `turns` exchanges, used to start a NEW OpenAI conversation
+        (10-turn reset, or a conversation lost on OpenAI's side) without forgetting what the
+        user was talking about. Answers and queries are cut to keep the note small.
+        """
+        exchanges = [m for m in (session_doc or {}).get("messages", []) if (m.get("user_input") or "").strip()]
+        if not exchanges or turns <= 0:
+            return None
+
+        def cut(text: str, limit: int) -> str:
+            text = " ".join(str(text).split())
+            return text if len(text) <= limit else text[: limit - 3] + "..."
+
+        lines = []
+        for msg in exchanges[-turns:]:
+            if msg.get("type") == "general":
+                answer = msg.get("llm_response", "")
+            else:
+                answer = self._compact_assistant_for_history(msg.get("human_response", ""))
+            lines.append(f"User: {cut(msg['user_input'], max_answer_chars)}")
+            if msg.get("query"):
+                lines.append(f"Query used: {cut(msg['query'], max_query_chars)}")
+            if answer:
+                lines.append(f"Assistant: {cut(answer, max_answer_chars)}")
+        return (
+            "Recap of the most recent exchanges earlier in this chat (oldest first). Use it to "
+            "resolve follow-up questions such as 'and yesterday?' or 'that vehicle'; fetch fresh "
+            "data with the tools instead of reusing these numbers.\n" + "\n".join(lines)
+        )
+
     def get_conversation_id(self, session_doc: Optional[Dict[str, Any]] = None) -> Optional[str]:
         """Return the stored OpenAI conversation id for this session, if any."""
         doc = session_doc if session_doc is not None else self.get_session_document()

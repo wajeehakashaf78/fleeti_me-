@@ -1,0 +1,9 @@
+Collection: DeviceType
+Fields:
+- _id: uuid (links from Device.device_type_id)
+- name: string
+- description: string
+- feature: string
+- protocols: array
+- sub_tenant_id: string
+- created_at: BSON Date

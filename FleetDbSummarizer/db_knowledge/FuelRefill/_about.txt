@@ -1,0 +1,13 @@
+Collection: FuelRefill
+Purpose: Detected fuel FILL events from the fuel sensor (litres added, start/end fuel, timestamps) keyed by imei.
+Use for: When/how much fuel was refilled on a vehicle.
+Do not confuse with: Not continuous fuel level history (that is in AvlRecord sensors). No sub_tenant_id - join via imei -> Device/Asset.
+Tenant field: no - scope through a join to a tenant-aware collection (Asset / Device / Driver)
+IDs: imei (->Device.imei / Asset.device_details.imei); time = initial_ts
+Default sections: FuelRefill_base
+Notes:
+- Unique on (imei, initial_ts). No sub_tenant_id - reach tenant via Device/Asset using imei.
+Sections:
+- FuelRefill_base
+Indexes:
+- imei + initial_ts (unique)

@@ -1,0 +1,13 @@
+Collection: DeviceType
+Purpose: Device type / feature templates (name, features, protocols), often per sub-tenant.
+Use for: Classify devices (Device.device_type_id / device_type).
+Do not confuse with: Not the live tracker; not the same as DeviceModel.
+Tenant field: no (sub_tenant_id is empty on every row) - reach it through Device
+IDs: _id (->Device.device_type_id); name
+Default sections: DeviceType_base
+Notes:
+- Join: Device.device_type_id = DeviceType._id.
+- Often tenant-scoped; join Device.device_type_id = DeviceType._id.
+Sections:
+- DeviceType_base
+- DeviceType_extra: other fields (audit: created/updated by/at, and less common fields)

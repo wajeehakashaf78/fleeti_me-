@@ -1,0 +1,23 @@
+Collection: Asset
+Fields:
+- details.custom_optional.wasl_key: string
+- details.custom_optional.company_wasl_key: string
+- details.custom_optional.company_identity_number: string
+- details.custom_optional.device_imei: string
+- details.custom_optional.company_identity_no: int|null
+- details.custom_optional.empty_weight: float|null
+- details.custom_optional.weight_factor: float|null
+- details.custom_optional.status: string
+- details.custom_optional.tga_activity: string|null
+- details.custom_optional.storing_category: string
+- details.custom_optional.storing_type: string
+- details.custom_optional.naqeba_license_info: string|null
+- details.custom_optional.environmental_compliance_category: string|null
+- details.custom_optional.tamper-proof_seal_presence: bool
+- details.custom_optional.customs_barcode: string
+- details.custom_optional.permit_hajj_umrah: string
+- details.custom_optional.minitry_of_tranport_license: string|null
+- details.custom_optional.register_on_wasl: bool
+- details.custom_optional.is_wasl: bool|null
+
+STRICT: DO NOT CHANGE ANY COMPANY IDENTITY NUMBER.

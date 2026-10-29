@@ -1,0 +1,38 @@
+Collection: DailyAnalytics
+Fields:
+- _id: uuid
+- count: int
+- distance_m: int
+- duration: float
+- idle_duration: int
+- idling_count: int
+- harsh_breaking_count: int
+- harsh_acceleration_count: int
+- harsh_cornering_count: int
+- over_speeding_count: int
+- zigzagging_count: int
+- sudden_stop_count: int
+- sharp_turn_count: int
+- frequent_start_stop_count: int
+- fuel_consumed_ltrs: int
+- crashing_count: int
+- fuel_refill_count: int
+- safety_score: int|null
+- behavior_score: int|null
+- avg_distance: int
+- avg_speed: int
+- avg_safety_score: int
+- avg_behaviuor_score: int
+- avg_fuel_efficieny: int
+- total_trips: int
+- total_accurate_trips: int
+- total_avg_speed: int
+- date: BSON Date (THE DAY - indexed; use this for date filters)
+- timesptamp: BSON Date (misspelled copy of date - prefer date)
+- device_id: string
+- asset_id: string
+- driver_id: string
+- asset_name: string (vehicle name)
+- driver_name: string
+- imei: string
+- sub_tenant_id: string (missing on some rows - scope through Asset/Driver)

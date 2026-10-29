@@ -1,0 +1,7 @@
+Collection: AvlRecordLatest
+Fields:
+- all_io_elements: array (every raw IO element of the packet (large; prefer the named fields))
+- group_size: int (number of packets in the device's upload batch)
+- is_wrong: bool (true = packet flagged invalid by the parser)
+- packet_index: int (position of the packet inside the device's upload batch)
+- raw_packet: string (original raw packet as received from the device (large; debugging only))

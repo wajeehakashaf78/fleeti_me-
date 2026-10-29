@@ -1,0 +1,9 @@
+Collection: AssetGroup
+Purpose: Named groups of assets (used for batch config & group reports).
+Use for: Which vehicles are in a group, group hierarchy.
+Do not confuse with: Not geofences; not alert rules.
+Tenant field: yes (sub_tenant_id)
+IDs: _id (group id); name; assigned_assets[].asset_id (->Asset._id); parent_group_id (->AssetGroup._id)
+Default sections: AssetGroup_base
+Sections:
+- AssetGroup_base: name, description, is_active, assigned_assets[].asset_id

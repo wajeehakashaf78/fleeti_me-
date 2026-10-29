@@ -1,9 +1,0 @@
-Collection: Asset
-Fields:
-- details.ownership_operations.business_unit: string
-- details.ownership_operations.owner_(company/leasing): string
-- details.ownership_operations.division: string
-- details.ownership_operations.account_code: string
-- details.ownership_operations.city_region_of_operation: string
-- details.ownership_operations.depot_yard_location: string
-

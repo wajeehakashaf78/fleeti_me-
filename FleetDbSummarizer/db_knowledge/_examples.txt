@@ -1,0 +1,164 @@
+# FMS example queries - used to show the AI how to write queries.
+# One block per example, starting with '=== Example'. Fields: tags, collections, question, query (one line).
+# Dates are Extended JSON {"$date": ...}. Never add sub_tenant_id - the server adds it.
+
+=== Example
+tags: location, telemetry, historical, asset, time-exact
+collections: Asset, AvlRecord
+question: What was the location of plate 304 XYA at 4:35 PM on Oct 10, 2025?
+query: db.Asset.aggregate([{"$match":{"details.plate_number":{"$regex":"^304 XYA$","$options":"i"}}},{"$lookup":{"from":"AvlRecord","let":{"assetImei":"$device_details.imei","targetTime":{"$date":"2025-10-10T16:35:00Z"}},"pipeline":[{"$match":{"$expr":{"$eq":["$imei","$$assetImei"]},"is_processed":true}},{"$addFields":{"time_diff":{"$abs":{"$subtract":["$timestamp","$$targetTime"]}}}},{"$sort":{"time_diff":1}},{"$limit":1},{"$project":{"_id":0,"location":1,"timestamp":1,"speed":1,"ignition_status":1}}],"as":"closest"}},{"$unwind":"$closest"},{"$project":{"_id":0,"plate_number":"$details.plate_number","location":"$closest.location","timestamp":"$closest.timestamp","speed":"$closest.speed"}}])
+
+=== Example
+tags: location, telemetry, latest, current, moving, count
+collections: Asset, AvlRecordLatest
+question: What is the latest location of plate 123 ABC?
+query: db.Asset.aggregate([{"$match":{"details.plate_number":{"$regex":"^123 ABC$","$options":"i"}}},{"$lookup":{"from":"AvlRecordLatest","let":{"aid":"$_id"},"pipeline":[{"$match":{"$expr":{"$eq":["$device_context.asset_id","$$aid"]},"is_processed":true}},{"$sort":{"timestamp":-1}},{"$limit":1}],"as":"latest"}},{"$unwind":"$latest"},{"$project":{"_id":0,"plate_number":"$details.plate_number","location":"$latest.location","speed":"$latest.speed","ignition_status":"$latest.ignition_status","timestamp":"$latest.timestamp"}}])
+
+=== Example
+tags: trips, asset, distance
+collections: Asset, Trip
+question: Show all trips for plate 243.
+query: db.Asset.aggregate([{"$match":{"details.plate_number":{"$regex":"^243$","$options":"i"}}},{"$lookup":{"from":"Trip","localField":"_id","foreignField":"driver_info.asset_id","as":"trips"}},{"$unwind":"$trips"},{"$project":{"_id":0,"plate_number":"$details.plate_number","start_at":"$trips.start_at","end_at":"$trips.end_at","duration":"$trips.duration","distance_covered":"$trips.distance_covered","avg_speed":"$trips.avg_speed"}}])
+
+=== Example
+tags: asset, details, plate, type
+collections: Asset
+question: What is the plate type of plate 123 ABC?
+query: db.Asset.aggregate([{"$match":{"details.plate_number":{"$regex":"^123 ABC$","$options":"i"}}},{"$project":{"_id":0,"plate_number":"$details.plate_number","plate_type":"$details.plate_type"}}])
+
+=== Example
+tags: events, alerts, idling, alerthistory, systemalert, asset, time-range, behavior
+collections: Asset, AlertHistory
+question: List Idling events for plate 123 ABC yesterday.
+query: db.Asset.aggregate([{"$match":{"details.plate_number":{"$regex":"^123 ABC$","$options":"i"}}},{"$lookup":{"from":"AlertHistory","let":{"aid":"$_id"},"pipeline":[{"$match":{"$expr":{"$eq":["$asset_info._id","$$aid"]},"alert_info.type":"systemAlert","alert_info.alert_message":{"$regex":"idling","$options":"i"},"created_at":{"$gte":{"$date":"2026-01-01T00:00:00Z"},"$lte":{"$date":"2026-01-02T00:00:00Z"}}}}],"as":"alerts"}},{"$unwind":"$alerts"},{"$project":{"_id":0,"plate_number":"$details.plate_number","alert":"$alerts.alert_info.alert_message","severity":"$alerts.alert_info.severity","timestamp":"$alerts.created_at","location":"$alerts.alert_info.location"}}])
+
+=== Example
+tags: events, alerts, harshbraking, behavior, systemalert, alerthistory
+collections: AlertHistory
+question: Show all harsh braking events.
+query: db.AlertHistory.aggregate([{"$match":{"alert_info.type":"systemAlert","alert_info.alert_message":{"$regex":"harsh[-_\\s]*braking|harshbraking","$options":"i"}}},{"$project":{"_id":0,"alert":"$alert_info.alert_message","severity":"$alert_info.severity","timestamp":"$created_at","location":"$alert_info.location"}}])
+
+=== Example
+tags: geofence, asset, assignment
+collections: Geofence, Asset
+question: Which vehicles are assigned to Geofence A?
+query: db.Geofence.aggregate([{"$match":{"name":{"$regex":"^Geofence A$","$options":"i"}}},{"$lookup":{"from":"Asset","localField":"asset_assignments.asset_id","foreignField":"_id","as":"asset"}},{"$unwind":"$asset"},{"$project":{"_id":0,"geofence":"$name","plate_number":"$asset.details.plate_number"}}])
+
+=== Example
+tags: geofence, alerts, alerthistory, asset, geofencealert
+collections: Asset, AlertHistory
+question: Show geofence alerts for plate 123 ABC.
+query: db.Asset.aggregate([{"$match":{"details.plate_number":{"$regex":"^123 ABC$","$options":"i"}}},{"$lookup":{"from":"AlertHistory","let":{"aid":"$_id"},"pipeline":[{"$match":{"$expr":{"$eq":["$asset_info._id","$$aid"]},"alert_info.type":"geofencealert"}}],"as":"alerts"}},{"$unwind":"$alerts"},{"$project":{"_id":0,"plate_number":"$details.plate_number","alert":"$alerts.alert_info.alert_message","timestamp":"$alerts.created_at","location":"$alerts.alert_info.location","status":"$alerts.alert_info.status"}}])
+
+=== Example
+tags: alerts, alerthistory, time-range
+collections: AlertHistory
+question: Get all alerts from 2025-10-01 to 2025-10-31.
+query: db.AlertHistory.aggregate([{"$match":{"created_at":{"$gte":{"$date":"2025-10-01T00:00:00Z"},"$lte":{"$date":"2025-10-31T23:59:59Z"}}}},{"$project":{"_id":0,"type":"$alert_info.type","alert":"$alert_info.alert_message","severity":"$alert_info.severity","timestamp":"$created_at","status":"$alert_info.status"}}])
+
+=== Example
+tags: reporting, connectivity, status, not-reporting, avlrecordlatest, asset
+collections: Asset, AvlRecordLatest
+question: Which vehicles are not reporting? (has a packet, but older than 12 hours)
+query: db.Asset.aggregate([{"$lookup":{"from":"AvlRecordLatest","let":{"aid":"$_id"},"pipeline":[{"$match":{"$expr":{"$eq":["$device_context.asset_id","$$aid"]},"is_processed":true}},{"$sort":{"timestamp":-1}},{"$limit":1},{"$project":{"_id":0,"timestamp":1}}],"as":"latest"}},{"$unwind":"$latest"},{"$match":{"$expr":{"$lt":["$latest.timestamp",{"$dateSubtract":{"startDate":"$$NOW","unit":"hour","amount":12}}]}}},{"$project":{"_id":0,"plate_number":"$details.plate_number","last_reported":"$latest.timestamp"}}])
+
+=== Example
+tags: offline, connectivity, status, reporting, avlrecordlatest, asset
+collections: Asset, AvlRecordLatest
+question: Which vehicles are offline? (last packet older than 30 minutes but within 12 hours)
+query: db.Asset.aggregate([{"$lookup":{"from":"AvlRecordLatest","let":{"aid":"$_id"},"pipeline":[{"$match":{"$expr":{"$eq":["$device_context.asset_id","$$aid"]},"is_processed":true}},{"$sort":{"timestamp":-1}},{"$limit":1},{"$project":{"_id":0,"timestamp":1}}],"as":"latest"}},{"$unwind":"$latest"},{"$match":{"$expr":{"$and":[{"$lt":["$latest.timestamp",{"$dateSubtract":{"startDate":"$$NOW","unit":"minute","amount":30}}]},{"$gte":["$latest.timestamp",{"$dateSubtract":{"startDate":"$$NOW","unit":"hour","amount":12}}]}]}}},{"$project":{"_id":0,"plate_number":"$details.plate_number","last_reported":"$latest.timestamp"}}])
+
+=== Example
+tags: moving, idle, stopped, illegal-movement, online, status, connectivity, avlrecordlatest, asset, count
+collections: Asset, AvlRecordLatest
+question: How many vehicles are currently moving? (online + speed > 0 + ignition On)
+query: db.Asset.aggregate([{"$lookup":{"from":"AvlRecordLatest","let":{"aid":"$_id"},"pipeline":[{"$match":{"$expr":{"$eq":["$device_context.asset_id","$$aid"]},"is_processed":true}},{"$sort":{"timestamp":-1}},{"$limit":1},{"$project":{"_id":0,"timestamp":1,"speed":1,"ignition_status":1}}],"as":"latest"}},{"$unwind":"$latest"},{"$match":{"$expr":{"$gte":["$latest.timestamp",{"$dateSubtract":{"startDate":"$$NOW","unit":"minute","amount":30}}]},"latest.speed":{"$gt":0},"latest.ignition_status":{"$regex":"^on$","$options":"i"}}},{"$count":"moving_vehicles"}])
+
+=== Example
+tags: not-connected, connectivity, status, avlrecordlatest, asset
+collections: Asset, AvlRecordLatest
+question: Which vehicles are not connected? (no processed packet at all)
+query: db.Asset.aggregate([{"$lookup":{"from":"AvlRecordLatest","let":{"aid":"$_id"},"pipeline":[{"$match":{"$expr":{"$eq":["$device_context.asset_id","$$aid"]},"is_processed":true}},{"$sort":{"timestamp":-1}},{"$limit":1},{"$project":{"_id":0,"timestamp":1}}],"as":"latest"}},{"$match":{"latest":{"$eq":[]}}},{"$project":{"_id":0,"plate_number":"$details.plate_number"}}])
+
+=== Example
+tags: assetgroup, group, asset, vehicles
+collections: AssetGroup, Asset
+question: Which vehicles are in the group SUZUKI 2026?
+query: db.AssetGroup.aggregate([{"$match":{"name":{"$regex":"^SUZUKI 2026$","$options":"i"}}},{"$lookup":{"from":"Asset","localField":"assigned_assets.asset_id","foreignField":"_id","as":"assets"}},{"$unwind":"$assets"},{"$project":{"_id":0,"group":"$name","plate_number":"$assets.details.plate_number"}}])
+
+=== Example
+tags: device, asset, imei
+collections: Asset
+question: What device is installed on plate 123 ABC?
+query: db.Asset.aggregate([{"$match":{"details.plate_number":{"$regex":"^123 ABC$","$options":"i"}}},{"$project":{"_id":0,"plate_number":"$details.plate_number","imei":"$device_details.imei","device_name":"$device_details.device_name"}}])
+
+=== Example
+tags: dailyanalytics, distance, asset, analytics
+collections: Asset, DailyAnalytics
+question: Distance covered for plate 123 ABC on 2025-02-01.
+query: db.Asset.aggregate([{"$match":{"details.plate_number":{"$regex":"^123 ABC$","$options":"i"}}},{"$lookup":{"from":"DailyAnalytics","localField":"_id","foreignField":"asset_id","as":"daily"}},{"$unwind":"$daily"},{"$match":{"daily.date":{"$gte":{"$date":"2025-02-01T00:00:00Z"},"$lte":{"$date":"2025-02-01T23:59:59Z"}}}},{"$project":{"_id":0,"plate_number":"$details.plate_number","date":"$daily.date","distance_m":"$daily.distance_m"}}])
+
+=== Example
+tags: driver, assignment, asset
+collections: Driver, Asset
+question: Who is the driver of plate LEB 8172? (latest assignment)
+query: db.Driver.aggregate([{"$unwind":"$asset_assignments"},{"$match":{"asset_assignments.created_at":{"$type":"date"}}},{"$sort":{"_id":1,"asset_assignments.created_at":-1}},{"$group":{"_id":"$_id","doc":{"$first":"$$ROOT"},"latest_assignment":{"$first":"$asset_assignments"}}},{"$lookup":{"from":"Asset","pipeline":[{"$match":{"details.plate_number":{"$regex":"^LEB 8172$","$options":"i"}}},{"$project":{"_id":1}},{"$limit":1}],"as":"matched_asset"}},{"$unwind":"$matched_asset"},{"$match":{"$expr":{"$eq":["$latest_assignment._id","$matched_asset._id"]}}},{"$project":{"_id":0,"driver_name":{"$trim":{"input":{"$concat":[{"$ifNull":["$doc.profile.first_name",""]}," ",{"$ifNull":["$doc.profile.last_name",""]}]}}}}}])
+
+=== Example
+tags: distance, trips, aggregate, asset
+collections: Trip, Asset
+question: Which vehicles covered more than 10 km in the last week?
+query: db.Trip.aggregate([{"$match":{"driver_info.asset_id":{"$exists":true,"$nin":[null,""]},"distance_covered":{"$type":"number"}}},{"$match":{"$expr":{"$gte":["$start_at",{"$dateSubtract":{"startDate":"$$NOW","unit":"day","amount":7}}]}}},{"$group":{"_id":"$driver_info.asset_id","totalMeters":{"$sum":"$distance_covered"}}},{"$match":{"totalMeters":{"$gt":10000}}},{"$lookup":{"from":"Asset","localField":"_id","foreignField":"_id","as":"asset"}},{"$unwind":"$asset"},{"$project":{"_id":0,"plate_number":"$asset.details.plate_number","totalKm":{"$divide":["$totalMeters",1000]}}}])
+=== Example
+tags: fuel, refill, asset, time-range
+collections: Asset, FuelRefill
+question: How much fuel was refilled on plate 1234 ABC in the last 7 days?
+query: db.Asset.aggregate([{"$match":{"details.plate_number":{"$regex":"^1234 ABC$","$options":"i"}}},{"$lookup":{"from":"FuelRefill","let":{"imei":"$device_details.imei"},"pipeline":[{"$match":{"$expr":{"$and":[{"$eq":["$imei","$$imei"]},{"$gte":["$initial_ts",{"$dateSubtract":{"startDate":"$$NOW","unit":"day","amount":7}}]}]}}},{"$sort":{"initial_ts":-1}}],"as":"refills"}},{"$unwind":"$refills"},{"$project":{"_id":0,"plate_number":"$details.plate_number","refill_time":"$refills.initial_ts","litres_added":"$refills.refill_litres","fuel_before":"$refills.initial_fuel","fuel_after":"$refills.final_fuel"}}])
+
+=== Example
+tags: fuel, drain, theft, asset, time-range
+collections: Asset, FuelDrain
+question: Which vehicles had a fuel drain (possible theft) on 2026-06-27?
+query: db.Asset.aggregate([{"$lookup":{"from":"FuelDrain","let":{"imei":"$device_details.imei"},"pipeline":[{"$match":{"$expr":{"$eq":["$imei","$$imei"]},"start_ts":{"$gte":{"$date":"2026-06-27T00:00:00Z"},"$lte":{"$date":"2026-06-27T23:59:59Z"}}}}],"as":"drains"}},{"$unwind":"$drains"},{"$project":{"_id":0,"plate_number":"$details.plate_number","drain_start":"$drains.start_ts","drain_end":"$drains.stop_ts","litres_drained":"$drains.drain_ltrs"}}])
+
+=== Example
+tags: coldchain, temperature, humidity, fridge, latest, current, asset
+collections: Asset, ColdChainRecordLatest
+question: What is the current fridge temperature of plate 1234 ABC?
+query: db.Asset.aggregate([{"$match":{"details.plate_number":{"$regex":"^1234 ABC$","$options":"i"}}},{"$lookup":{"from":"ColdChainRecordLatest","localField":"device_details.imei","foreignField":"imei","as":"cc"}},{"$unwind":"$cc"},{"$project":{"_id":0,"plate_number":"$details.plate_number","temperature_c":"$cc.probe_temperature","humidity_pct":"$cc.probe_humidity","reading_time":"$cc.timestamp","temperature_over_limit":"$cc.alarm_status.temperature_over_limit"}}])
+
+=== Example
+tags: sim, device, model, manufacturer, hardware, asset
+collections: Asset, Device, Sim, DeviceModel
+question: Which tracker model and SIM card are installed on plate 1234 ABC?
+query: db.Asset.aggregate([{"$match":{"details.plate_number":{"$regex":"^1234 ABC$","$options":"i"}}},{"$lookup":{"from":"Device","localField":"_id","foreignField":"asset_id","as":"device"}},{"$unwind":"$device"},{"$lookup":{"from":"Sim","localField":"device.sim_id","foreignField":"_id","as":"sim"}},{"$lookup":{"from":"DeviceModel","localField":"device.device_model_id","foreignField":"model","as":"model"}},{"$project":{"_id":0,"plate_number":"$details.plate_number","imei":"$device.imei","device_model":"$device.device_model_id","manufacturer":{"$first":"$model.manufacturer"},"sim_number":{"$first":"$sim.msisdn"},"iccid":{"$first":"$sim.iccid"}}}])
+
+=== Example
+tags: wasl, registration, compliance, push, asset
+collections: Asset, Device, WaslPacketLatest
+question: Is plate 1234 ABC registered on WASL and when was its last WASL push?
+query: db.Asset.aggregate([{"$match":{"details.plate_number":{"$regex":"^1234 ABC$","$options":"i"}}},{"$lookup":{"from":"Device","localField":"_id","foreignField":"asset_id","as":"device"}},{"$unwind":"$device"},{"$lookup":{"from":"WaslPacketLatest","localField":"device.imei","foreignField":"imei","as":"last_push"}},{"$project":{"_id":0,"plate_number":"$details.plate_number","registered_on_wasl":{"$gt":[{"$strLenCP":{"$ifNull":["$device.wasl.asset_wasl_key",""]}},0]},"last_wasl_push":{"$first":"$last_push.timestamp"}}}])
+
+=== Example
+tags: wasl, registration, failed, error, reason, asset
+collections: Asset, WaslVehicle
+question: Why did WASL registration fail for plate 1234 ABC?
+query: db.Asset.aggregate([{"$match":{"details.plate_number":{"$regex":"^1234 ABC$","$options":"i"}}},{"$lookup":{"from":"WaslVehicle","localField":"device_details.imei","foreignField":"imei_no","as":"attempts"}},{"$unwind":"$attempts"},{"$sort":{"attempts.created_at":-1}},{"$project":{"_id":0,"plate_number":"$details.plate_number","attempt_time":"$attempts.created_at","reply":"$attempts.reply","reason":"$attempts.response"}}])
+
+=== Example
+tags: sensor, ble, temperature, latest, current, io, asset
+collections: Asset, AvlRecordLatestFields
+question: What is the current BLE temperature sensor 1 reading on plate 1234 ABC?
+query: db.Asset.aggregate([{"$match":{"details.plate_number":{"$regex":"^1234 ABC$","$options":"i"}}},{"$lookup":{"from":"AvlRecordLatestFields","localField":"device_details.imei","foreignField":"imei","as":"io"}},{"$unwind":"$io"},{"$project":{"_id":0,"plate_number":"$details.plate_number","sensor_1_temperature_c":{"$convert":{"input":"$io.ble_temperature_1","to":"double","onError":null,"onNull":null}},"reading_time":"$io.timestamp"}}])
+
+=== Example
+tags: threshold, systemalertrule, over-speeding, definition, settings
+collections: SystemAlertRule
+question: What is the over-speeding threshold?
+query: db.SystemAlertRule.aggregate([{"$match":{"event_type":"over_speeding"}},{"$project":{"_id":0,"event_type":1,"speed_limit":1,"time_interval":1,"is_enabled":1}}])
+
+=== Example
+tags: devicemodel, catalog, manufacturer, hardware
+collections: DeviceModel
+question: Which tracker models does each manufacturer have?
+query: db.DeviceModel.aggregate([{"$group":{"_id":"$manufacturer","models":{"$addToSet":"$model"}}},{"$project":{"_id":0,"manufacturer":"$_id","models":1}}])

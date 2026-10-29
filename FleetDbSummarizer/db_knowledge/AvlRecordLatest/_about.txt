@@ -1,0 +1,29 @@
+Collection: AvlRecordLatest
+Purpose: CURRENT telemetry: exactly one latest packet per DEVICE (live location, speed, ignition, movement).
+Use for: Live map, online/offline, moving/idle/stopped right now.
+Do not confuse with: Not history (AvlRecord). Do not sort the whole collection to find "latest" - every row already is the latest packet of its device.
+Tenant field: yes (sub_tenant_id)
+IDs: imei / device_id (both unique); device_context.asset_id (->Asset._id)
+Default sections: AvlRecordLatest_base
+Enums:
+- ignition_status: On | Off
+- movement: On | Off
+- device_state.motion_state.status: Moving | Idling | Stopped | Illegal Movement | Unknown
+Notes:
+- One row per DEVICE (imei and device_id are unique). About 300 vehicles have 2+ rows (device swapped) and ~1,600 rows have no vehicle.
+- Per vehicle: inside the $lookup from Asset add {"$sort":{"timestamp":-1}},{"$limit":1} after the match, so each vehicle counts once.
+- Always match is_processed: true.
+- Used for online (packet < 30 min), offline, not reporting, movement states.
+Sections:
+- AvlRecordLatest_base: timestamp, location, speed, ignition_status, movement, gps_status, odometer, motion_state
+- AvlRecordLatest_sensor: current fuel/temperature/humidity/weight & other sensor readings
+- AvlRecordLatest_raw: raw / processing fields of the packet (debugging; large values)
+- AvlRecordLatest_extra: other fields (audit: created/updated by/at, and less common fields)
+- AvlRecordLatest_movement: summary of the CURRENT movement - present on few rows; prefer Trip / DailyAnalytics for history
+Indexes:
+- imei + device_id + timestamp
+- device_id + timestamp (unique)
+- imei
+- imei + is_processed
+- imei + timestamp
+- sub_tenant_id

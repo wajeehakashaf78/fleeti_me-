@@ -1,0 +1,14 @@
+Collection: DeviceModel
+Purpose: Global catalog of tracker hardware models (manufacturer + model + protocols). Small reference catalog.
+Use for: What protocol a model uses; lookup by Device.device_model_id.
+Do not confuse with: Not an installed device instance.
+Tenant field: global catalog (no tenant data) - readable directly
+IDs: model (<- Device.device_model_id, which stores the model NAME); manufacturer
+Default sections: DeviceModel_base
+Enums:
+- manufacturer: Teltonika | JIMI | ATelematics | Elitech
+Notes:
+- Join: Device.device_model_id = DeviceModel.model (NOT DeviceModel._id).
+Sections:
+- DeviceModel_base
+- DeviceModel_extra: other fields (audit: created/updated by/at, and less common fields)

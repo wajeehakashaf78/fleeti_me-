@@ -1,0 +1,8 @@
+Collection: Asset
+Fields:
+- details.maintenance_logs.last_service_date: BSON Date|null
+- details.maintenance_logs.next_service_due: BSON Date|null
+- details.maintenance_logs.maintenance_schedule: string|null
+- details.maintenance_logs.last_tyre_change_date: BSON Date|null
+- details.maintenance_logs.next_tyre_change_due: BSON Date|null
+- details.maintenance_logs.tyre_change_schedule: string|null

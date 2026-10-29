@@ -1,6 +1,0 @@
-Collection: Asset
-Fields:
-- details.safety_security.fire_extinguisher_installed: bool
-- details.safety_security.first_aid_kit: bool
-- details.safety_security.dashcam_installed: bool
-

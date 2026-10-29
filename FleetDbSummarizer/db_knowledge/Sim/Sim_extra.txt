@@ -1,0 +1,8 @@
+Collection: Sim
+Fields:
+- Billing: object ({ monthly_cost, currency, billing_cycle } of the SIM)
+- History: object (SIM status-change history)
+- created_by: string (user who created the record)
+- last_deactivation_response: string (provider response to the last deactivation)
+- updated_at: BSON Date (when the record was last changed)
+- updated_by: string or null (user who last changed the record)

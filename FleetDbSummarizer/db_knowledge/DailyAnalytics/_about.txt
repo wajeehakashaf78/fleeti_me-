@@ -1,0 +1,12 @@
+Collection: DailyAnalytics
+Purpose: Per-day aggregates per asset/driver: distance, duration, idle, over-speeding, fuel, scores.
+Use for: Daily totals and day-by-day trends for a vehicle or driver.
+Do not confuse with: Not per-trip rows (Trip); not all-time driver KPIs (Driver analytics).
+Tenant field: partial (missing on some rows) - scope through a join to Asset or Driver
+IDs: asset_id (->Asset._id); driver_id (->Driver._id); date (the day, indexed)
+Default sections: DailyAnalytics_base
+Notes:
+- The day is the field `date` (indexed). `timesptamp` is a misspelled copy - never use `timestamp` (does not exist).
+- 61 rows are unrelated call-centre agent stats (agentId, no asset_id) - any asset/driver filter excludes them.
+Sections:
+- DailyAnalytics_base: daily distance (meters), duration, idle, over_speeding, scores

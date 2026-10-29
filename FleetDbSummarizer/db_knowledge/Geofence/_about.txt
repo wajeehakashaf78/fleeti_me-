@@ -1,0 +1,18 @@
+Collection: Geofence
+Purpose: Geofence zone DEFINITIONS (Circle/Polygon) and assigned assets/groups. Entry/exit logs live in AlertHistory.
+Use for: Fence name, shape, radius, assigned vehicles.
+Do not confuse with: Not entry/exit event logs (those live in AlertHistory, outside this focused set).
+Tenant field: yes (sub_tenant_id)
+IDs: _id; name; asset_assignments[].asset_id (->Asset._id); asset_group_assignments[].group_id (->AssetGroup._id)
+Default sections: Geofence_base
+Enums:
+- type: Circle | Polygon
+- status: Active | Inactive
+Notes:
+- Join: Geofence.asset_assignments[].asset_id = Asset._id.
+- type Circle | Polygon. Circle uses radius (meters) + center in coordinates.
+- This collection is DEFINITION only.
+Sections:
+- Geofence_base: name, type (Polygon/Circle), status, coordinates, radius
+- Geofence_asset_assignment: assets & asset-groups assigned to the geofence (ids)
+- Geofence_extra: other fields (audit: created/updated by/at, and less common fields)

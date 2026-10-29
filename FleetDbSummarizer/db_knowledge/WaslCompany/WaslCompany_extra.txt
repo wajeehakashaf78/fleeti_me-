@@ -1,0 +1,17 @@
+Collection: WaslCompany
+Fields:
+- created_by: string (user who created the record)
+- updated_at: usually null (when the record was last changed)
+- updated_by: usually null (user who last changed the record)
+- identity_number: string (national / company identity number)
+- Commercial_record_number: string (commercial registration (CR) number)
+- commercial_record_issue_date: string (commercial registration issue date)
+- phone_number: string (company phone)
+- email_address: string (company email)
+- manager_name: string (company manager name)
+- manager_phone: string (manager phone)
+- manager_mobile: string (manager mobile)
+- dob: string (date of birth)
+- dob_format: string (format of the date-of-birth field (hijri / gregorian))
+- extension_number: int (company phone extension)
+- sfda_license_number: string (SFDA license number)

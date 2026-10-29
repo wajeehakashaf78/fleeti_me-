@@ -1,0 +1,31 @@
+Collection: AvlRecord
+Purpose: Telemetry/GPS HISTORY: location, speed, ignition, movement, sensors, odometer, voltage over time.
+Use for: Where was the vehicle at time T? Speed/ignition history, sensor history.
+Do not confuse with: Not the single current position (use AvlRecordLatest). Always prefer is_processed: true.
+Tenant field: yes (sub_tenant_id)
+IDs: imei; device_context.asset_id (->Asset._id); device_context.driver_info.id (->Driver._id)
+Default sections: AvlRecord_base
+Enums:
+- ignition_status: On | Off
+- movement: On | Off
+- gps_status: Located | NotLocated | GNSS ON with fix | GNSS ON without fix | True | False
+- manufacturer: Teltonika | JIMI | ATelematics
+Notes:
+- Huge collection (~5.5 billion rows): always filter by imei or device_context.asset_id AND a timestamp range.
+- Always filter is_processed: true for trustworthy telemetry.
+- Join vehicle via device_context.asset_id or imei.
+Sections:
+- AvlRecord_base: timestamp, location, speed, ignition_status, movement, gps_status, odometer
+- AvlRecord_sensor: fuel/temperature/humidity/weight & other sensor readings
+- AvlRecord_extra: other fields (audit: created/updated by/at, and less common fields)
+- AvlRecord_raw: raw / processing fields of the packet (debugging; large values)
+Indexes:
+- device_context.asset_id + is_processed + timestamp
+- is_processed + no_asset + timestamp
+- device_context.asset_id + timestamp
+- imei + timestamp
+- imei + timestamp
+- timestamp + imei
+- is_processed + is_unprocessed + no_asset + imei + received_on
+- is_processed + is_unprocessed + no_asset + received_on
+- sub_tenant_id + created_at

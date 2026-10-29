@@ -1,0 +1,23 @@
+Collection: WaslPacket
+Purpose: Location packets pushed to WASL (compliance audit trail): payload sent + WASL response, keyed by imei / avl_record_id.
+Use for: What was reported to WASL for a vehicle, WASL accept/reject text, location snapshot inside wasl_location_data.
+Do not confuse with: Not Fleeti’s own GPS source of truth (AvlRecord). Usually no sub_tenant_id - scope via imei -> Device/Asset.
+Tenant field: no - scope through a join to a tenant-aware collection (Asset / Device / Driver)
+IDs: imei; avl_record_id (->AvlRecord._id); time = timestamp / created_at
+Default sections: WaslPacket_base
+Enums:
+- wasl_location_data.vehicle_location.vehicle_status: MOVING | PARKED_ENGINE_ON | PARKED_ENGINE_OFF
+- wasl_response: {"resultCode":"success","success":true} | Empty Response from wasl
+Notes:
+- Huge collection (~3.3 billion rows): always filter by imei AND a created_at range.
+- Built from an AvlRecord: avl_record_id -> AvlRecord._id, plus imei.
+- wasl_location_data.vehicle_location.reference_key ~ vehicle WASL key; driver_reference_key ~ driver WASL key.
+- tenant may hold a host string (e.g. fms.tracking.me) instead of sub_tenant_id.
+- This is the compliance push log - use AvlRecord for Fleeti GPS truth.
+Sections:
+- WaslPacket_base
+- WaslPacket_extra: other fields (audit: created/updated by/at, and less common fields)
+Indexes:
+- imei
+- imei + created_at
+- created_at

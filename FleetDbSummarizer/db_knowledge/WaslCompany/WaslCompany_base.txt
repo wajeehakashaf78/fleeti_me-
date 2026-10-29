@@ -1,0 +1,12 @@
+Collection: WaslCompany
+Fields:
+- _id: uuid
+- register_type: string
+- activity: string
+- wasl_key: string (company WASL key)
+- reply: string (Success | Failed)
+- response: string
+- status: string (Active | Inactive)
+- sub_tenant_id: string
+- created_at: BSON Date
+- sfda_company_activity: null

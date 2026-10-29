@@ -1,0 +1,26 @@
+Collection: SubTenant
+Purpose: Customer / account master inside the fms database. One SubTenant = one company account that owns vehicles, drivers, devices, SIMs, etc.
+Use for: Who the customer is, account status, max devices, contact, VAT / CR number, account manager, billing, branding.
+Do not confuse with: Not the vehicles themselves - those are in Asset. Other collections point here via sub_tenant_id.
+Tenant field: is the tenant itself: SubTenant.sub_account_id = sub_tenant_id of every other collection
+IDs: sub_account_id (= sub_tenant_id everywhere else; hidden, applied by the server)
+Default sections: SubTenant_base
+Hidden fields: password, username, sub_account_id
+Enums:
+- status: Active
+- subtenant_status: Active | Suspended
+Notes:
+- Other collections reference the tenant with sub_tenant_id (UUID-like id or host string such as fms.tracking.me).
+- SubTenant documents themselves do not carry sub_tenant_id; they ARE the tenant.
+- LIMITED: credentials (password, username) and the internal account id are hidden.
+- The current user's own tenant only - never list other tenants.
+- The server returns only the current user's own account row.
+Sections:
+- SubTenant_base
+- SubTenant_extra: other fields (audit: created/updated by/at, and less common fields)
+Indexes:
+- container_id
+- container_group_id
+- sub_account_id
+- container_group_id + sub_account_id
+- name

@@ -1,0 +1,13 @@
+Collection: WaslPacketLatest
+Purpose: Latest WASL push pointer per IMEI (avl_record_id + timestamp) - companion to WaslPacket history.
+Use for: Most recent WASL sync time / packet for a device.
+Do not confuse with: Not full WASL push history (WaslPacket). Not current fleet map position (AvlRecordLatest).
+Tenant field: no - scope through a join to a tenant-aware collection (Asset / Device / Driver)
+IDs: imei (one row per device); avl_record_id (->AvlRecord._id)
+Default sections: WaslPacketLatest_base
+Notes:
+- One latest pointer style doc per imei/tenant context.
+- Join history with WaslPacket on imei (and optionally avl_record_id).
+Sections:
+- WaslPacketLatest_base
+- WaslPacketLatest_extra: other fields (audit: created/updated by/at, and less common fields)

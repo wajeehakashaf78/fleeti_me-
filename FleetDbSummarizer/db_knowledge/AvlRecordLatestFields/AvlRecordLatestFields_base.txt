@@ -1,0 +1,54 @@
+Collection: AvlRecordLatestFields
+Fields:
+- _id: ObjectId
+- imei: string
+- device_id: string
+- timestamp: BSON Date
+- speed: float
+- ignition_status: string ("On" or "Off")
+- gps_status: string
+- is_processed: bool
+- location: { type: "Point", coordinates: [latitude, longitude] }  (index 0 = LATITUDE, index 1 = LONGITUDE)
+- device_context.asset_id: string (links to Asset._id)
+- sub_tenant_id: string
+- battery_level: string (string - convert with $toDouble)
+- HDOP: string
+- alarm_param1: object
+- alarm_param2: object
+- alarm_status: object
+- altitude: float
+- antenna_status: string
+- behaviour: object
+- created_at: BSON Date
+- data_protocol: string
+- device_model_id: string
+- device_state: object
+- device_type: int
+- direction_angle: float
+- door_status: string
+- external_voltage: string (string - convert with $toDouble)
+- fuel_level_percentage: string (string - convert with $toDouble)
+- fuel_pump_status: string
+- group_id: string
+- gsm_signal: string
+- is_unprocessed: bool
+- load_sensor_voltage: string
+- location_updated_at: BSON Date
+- manufacturer: string
+- mileage: string
+- mileage_unit: string
+- model: string
+- movement_distance_m: float
+- movement_distance_o: float
+- movement_end_time: BSON Date
+- movement_start_time: BSON Date
+- obd_updated_at: BSON Date
+- odometer_updated_at: BSON Date
+- packet_type: string
+- power_status: string
+- processed_at: int
+- received_on: BSON Date
+- satellites: int
+- sensors: object
+- temperature: string (string - convert with $toDouble)
+- total_odometer: string

@@ -1,0 +1,15 @@
+Collection: AvlRecordLatest
+Fields:
+- analog_input_1: string (analog input 1 value)
+- applied_alerts: array (alert rules evaluated / triggered on this packet)
+- behaviour: object (driving-behaviour events detected in this packet (harsh braking, cornering, ...))
+- created_at: BSON Date (when the record was created)
+- device_type: int (device type code)
+- digital_input_1: string (digital input 1 state)
+- digital_output_1: string (digital output 1 state (e.g. immobiliser relay))
+- fault_code: array (vehicle fault / DTC codes)
+- geofence: string (geofence the vehicle is currently in)
+- geofencealert: array (geofence enter / exit events of this packet)
+- iccid: string (ICCID of the SIM inside the device)
+- iccid2: string (ICCID of the second SIM)
+- updated_at: BSON Date (when the record was last changed)

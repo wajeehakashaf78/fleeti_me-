@@ -1,0 +1,5 @@
+Collection: DeviceType
+Fields:
+- created_by: string (user who created the record)
+- updated_at: usually null (when the record was last changed)
+- updated_by: usually null (user who last changed the record)

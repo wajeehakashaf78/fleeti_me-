@@ -1,0 +1,10 @@
+Collection: AvlRecord
+Fields:
+- all_io_elements: array (every raw IO element of the packet (large; prefer the named fields))
+- group_size: int (number of packets in the device's upload batch)
+- is_unprocessed: bool (true = packet not processed yet)
+- is_wrong: bool (true = packet flagged invalid by the parser)
+- packet_index: int (position of the packet inside the device's upload batch)
+- packet_type: string (type of packet sent by the device)
+- processed_at: int (processing time (epoch number))
+- raw_packet: string (original raw packet as received from the device (large; debugging only))

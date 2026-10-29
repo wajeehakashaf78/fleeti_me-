@@ -1,0 +1,17 @@
+Collection: ColdChainRecord
+Purpose: Historical cold-chain sensor packets (probe temperature/humidity, alarms, zone context). Separate stream from normal AVL.
+Use for: Temp/humidity history for refrigerated assets.
+Do not confuse with: Not the latest-only view (ColdChainRecordLatest). Not regular GPS fleet history (AvlRecord).
+Tenant field: partial (missing on ~1/3 of rows) - scope through Device/Asset by imei
+IDs: imei; device_id (->Device)
+Default sections: ColdChainRecord_base
+Enums:
+- model: RCW-3000 | RCW-3200 (Elitech)
+Notes:
+- alarm_status.temperature_over_limit / temperature_under_limit / humidity_* flag out-of-range readings.
+- Parallel telemetry path for cold-chain probes; join to Device/Asset by imei / device_id.
+Sections:
+- ColdChainRecord_base
+- ColdChainRecord_raw: raw / processing fields of the packet (debugging; large values)
+- ColdChainRecord_network: 4G / Wi-Fi / LoRa network status of the device
+- ColdChainRecord_extra: other fields (audit: created/updated by/at, and less common fields)

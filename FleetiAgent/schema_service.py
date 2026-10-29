@@ -1,200 +1,47 @@
 """
-Deterministic schema + query-context service for the FLEETI GPT-5 agent.
+Schema + query-context service for the FLEETI GPT-5 agent.
 
-Replaces the embedding/BM25/cross-encoder + routing-LLM RAG stack for the /chat/v2
-path. The DB is only ~12 logical collections, so instead of semantic retrieval we:
-  - expose a compact always-on MENU (collections, sections, disambiguations) in the
-    get_query_context tool description, and
-  - return only the pruned fields the model asks for (+ relevant joins + 2-3 relevant
-    examples) on demand.
+DB knowledge (collections, fields, enums, notes, joins, example queries) is read from the
+text files in FleetDbSummarizer/db_knowledge/ via FleetDbSummarizer.knowledge. Only the
+query RULES live here in Python.
 
-Field text comes from the schema .txt files (source of truth) via load_collection_schemas;
-join rules reuse generate_relationship_rules. No ML, no extra LLM call.
+  - build_menu(): a compact always-on MENU (every collection, its sections and the
+    disambiguations) embedded in the get_query_context tool description.
+  - get_query_context(): the fields of the requested sections, the collections' enums and
+    notes, the exact joins between them and 2-3 example queries.
+
+RAG (FleetDbSummarizer.rag - Nomic embeddings in Postgres/pgvector, HNSW) chooses the
+examples and adds the most relevant extra fields for the user's question. The menu, joins
+and rules never go through RAG. Without Postgres it falls back to keyword matching.
 """
 
 import re
 import logging
 from typing import Any, Dict, List, Optional, Tuple
 
-from FleetDbSummarizer.config import COLLECTION_SCHEMAS_DIR
-from FleetDbSummarizer.utils import load_collection_schemas, generate_relationship_rules
+from FleetDbSummarizer.knowledge import Example, load_knowledge
+from FleetDbSummarizer import rag
+from FleetiAgent.context_memory import MAX_CONTEXT_TOKENS, ConversationView, count_tokens
 
 logger = logging.getLogger(__name__)
 
-
-# ================================
-# Section fields, loaded once from the .txt files
-# ================================
-def _load_sections() -> Tuple[Dict[str, str], Dict[str, str]]:
-    """
-    Returns:
-      section_fields: {section_name: "- field: type" lines joined}
-      section_parent: {section_name: top_level_collection}
-    """
-    raw = load_collection_schemas(COLLECTION_SCHEMAS_DIR)  # {parent: {section: schema_text}}
-    section_fields: Dict[str, str] = {}
-    section_parent: Dict[str, str] = {}
-    for parent, sections in raw.items():
-        for section, schema_text in sections.items():
-            field_lines = [
-                ln.strip()
-                for ln in schema_text.splitlines()
-                if ln.strip().startswith("- ")
-            ]
-            section_fields[section] = "\n".join(field_lines)
-            section_parent[section] = parent
-    return section_fields, section_parent
-
-
-_SECTION_FIELDS, _SECTION_PARENT = _load_sections()
+_K = load_knowledge()
 
 
 def _norm(name: str) -> str:
     return re.sub(r"[^a-z0-9]", "", (name or "").lower())
 
 
-# Lookup of normalized section name -> canonical section name.
-_NORM_SECTION = {_norm(s): s for s in _SECTION_FIELDS}
-# Normalized top-level collection -> canonical collection.
-_NORM_COLLECTION = {_norm(p): p for p in set(_SECTION_PARENT.values())}
-_COLLECTION_SECTIONS: Dict[str, List[str]] = {}
-for _sec, _par in _SECTION_PARENT.items():
-    _COLLECTION_SECTIONS.setdefault(_par, []).append(_sec)
-for _par in _COLLECTION_SECTIONS:
-    _COLLECTION_SECTIONS[_par].sort(key=lambda x: (not x.endswith("_base"), x))
+# Normalized section name -> canonical section; normalized collection -> canonical collection.
+_NORM_SECTION = {_norm(s): s for s in _K.section_fields}
+_NORM_COLLECTION = {_norm(c): c for c in _K.collections}
+_EXAMPLES_BY_KEY = {ex.key: ex for ex in _K.examples}
 
-# When a top-level collection is requested by name, return these default section(s).
-_DEFAULT_SECTIONS: Dict[str, List[str]] = {
-    "Asset": ["asset_base", "asset_details_base"],
-    "Driver": ["Driver_base", "Driver_Profile"],
-    "AvlRecord": ["AvlRecord_base"],
-    "Trip": ["Trip_base"],
-    "AlertRule": ["AlertRule_base"],
-    "AlertHistory": ["AlertHistory_base"],
-    "Geofence": ["Geofence_base"],
-    "AssetGroup": ["AssetGroup_base"],
-    "Device": ["Device_base"],
-    "DailyAnalytics": ["DailyAnalytics_base"],
-    "SystemAlertRule": ["SystemAlertRule_base"],
-}
-
-
-# ================================
-# Curated catalog -> always-on MENU
-# ================================
-# One compact line of purpose per section for the most-used sections; the rest are
-# listed by name (the names are self-descriptive). Disambiguations are the high-value part.
-CATALOG: List[Dict[str, Any]] = [
-    {
-        "collection": "Asset",
-        "purpose": "Vehicles/assets: identity, specs, documents/expiry, device link.",
-        "ids": "_id (asset id); details.plate_number; device_details.imei",
-        "section_notes": {
-            "asset_base": "status, availability, created_at, expiry_date",
-            "asset_details_base": "plate_number, plate_type, vehicle_type, fleet_type, make, model, VIN, fuel_type, odometer",
-            "asset_details_document_status_flags": "insurance/istimara/mvpi/operation-card/barrier-cert expiry & status",
-            "asset_device_details": "device_details.imei (->Device.imei), group_id (->AssetGroup._id), group_name, device_name",
-        },
-    },
-    {
-        "collection": "AvlRecord",
-        "purpose": "Telemetry/GPS: location, speed, ignition, movement, sensors, odometer, voltage.",
-        "ids": "imei; device_context.asset_id (->Asset._id); device_context.driver_info.id (->Driver._id)",
-        "section_notes": {
-            "AvlRecord_base": "timestamp, location, speed, ignition_status, movement, gps_status, odometer",
-            "AvlRecord_sensor": "fuel/temperature/humidity/weight & other sensor readings",
-        },
-    },
-    {
-        "collection": "Trip",
-        "purpose": "Per-trip records: start/end, distance, duration, speeds, idling, harsh events, fuel, scores.",
-        "ids": "driver_info.asset_id (->Asset._id); driver_info.driver_info.id (->Driver._id); imei",
-        "section_notes": {
-            "Trip_base": "start_at, end_at, distance_covered (meters), duration, avg/max speed, idle_time",
-            "Trip_Analytics": "per-trip behavior/safety analytics",
-        },
-    },
-    {
-        "collection": "Driver",
-        "purpose": "Drivers: profile, vehicle assignments, license/visa/medical, compliance, analytics.",
-        "ids": "_id (driver id); profile.first_name + profile.last_name; asset_assignments[]._id (->Asset._id)",
-        "section_notes": {
-            "Driver_base": "core identity",
-            "Driver_Profile": "full personal/professional profile",
-            "Driver_analytics": "OVERALL/all-time driver KPIs (safety_score, behavior_score, avg_speed, total_trips/distance/hours, harsh-event counts) — use for 'overall'/all-time, do not recompute from Trip/DailyAnalytics",
-            "Driver_behavior": "overall behavior scores (risk, compliance, fatigue)",
-            "Driver_performance": "overall performance ratings (overall_rating, safety_score, efficiency)",
-            "Driver_asset_assignments": "driver<->vehicle assignments (use latest for driver-of-vehicle)",
-            "Driver_license": "license issue/expiry/status",
-            "Driver_visa": "visa/work-permit",
-            "Driver_medical": "medical certificate expiry/status",
-            "Driver_wasl_logs": "WASL (Saudi) compliance logs",
-        },
-    },
-    {
-        "collection": "AlertHistory",
-        "purpose": "ALL alert/event LOGS: driving-behavior/system events, user AlertRule triggers, AND geofence entry/exit. (This is where idling, harsh braking, over-speeding, geofence events, etc. live.)",
-        "ids": "asset_info._id (->Asset._id); alert_info.alert_rule_id (->AlertRule._id); alert_info.avl_packet_id (->AvlRecord._id)",
-        "section_notes": {
-            "AlertHistory_base": "alert_info.type ('systemAlert' | 'alertRule' | 'geofencealert'), alert_info.alert_message (event/alert name), severity, status, created_at (event time), location",
-        },
-    },
-    {
-        "collection": "AlertRule",
-        "purpose": "User alert-rule DEFINITIONS/config (trigger logs live in AlertHistory). system_alert_rule=true marks system rules.",
-        "ids": "_id (->AlertHistory.alert_info.alert_rule_id); basic_info.rule_name",
-        "section_notes": {
-            "AlertRule_base": "status, priority, system_alert_rule, basic_info.rule_name/description/severity/enable_rule",
-            "AlertRule_condition": "value/event/logic/system based conditions & thresholds",
-            "AlertRule_assigned_assets": "assigned_assets[].asset_id + assigned_asset_groups[].group_id monitored by the rule",
-        },
-    },
-    {
-        "collection": "Geofence",
-        "purpose": "Geofence DEFINITIONS/config (geofence event logs live in AlertHistory). status Active/Inactive.",
-        "ids": "_id; name; asset_assignments[].asset_id (->Asset._id); asset_group_assignments[].group_id (->AssetGroup._id)",
-        "section_notes": {
-            "Geofence_base": "name, type (Polygon/Circle), status, coordinates, radius",
-            "Geofence_asset_assignment": "assets & asset-groups assigned to the geofence (ids)",
-        },
-    },
-    {
-        "collection": "SystemAlertRule",
-        "purpose": "System event DEFINITIONS/thresholds (idling, harsh_*, over_speeding, etc.). The actual event logs live in AlertHistory (alert_info.type='systemAlert').",
-        "ids": "_id; event_type",
-        "section_notes": {"SystemAlertRule_base": "event_type + per-event thresholds (time_interval, speed_limit, delta_*, etc.), is_enabled"},
-    },
-    {
-        "collection": "AssetGroup",
-        "purpose": "Named groups of assets (used for batch config & group reports).",
-        "ids": "_id (group id); name; assigned_assets[].asset_id (->Asset._id); parent_group_id (->AssetGroup._id)",
-        "section_notes": {"AssetGroup_base": "name, description, is_active, assigned_assets[].asset_id"},
-    },
-    {
-        "collection": "Device",
-        "purpose": "Tracking device/hardware metadata.",
-        "ids": "imei (->Asset.details.device_details.imei); device_id (->AvlRecord.device_id)",
-        "section_notes": {"Device_base": "imei, serial, model, manufacturer, SIM, install/warranty"},
-    },
-    {
-        "collection": "DailyAnalytics",
-        "purpose": "Per-day aggregates per asset/driver: distance, duration, idle, over-speeding, fuel, scores.",
-        "ids": "asset_id (->Asset._id); driver_id (->Driver._id); timestamp (the day)",
-        "section_notes": {"DailyAnalytics_base": "daily distance (meters), duration, idle, over_speeding, scores"},
-    },
+# Kept for callers that used the old in-Python example bank.
+EXAMPLES: List[Dict[str, Any]] = [
+    {"tags": ex.tags, "collections": ex.collections, "question": ex.question, "query": ex.query}
+    for ex in _K.examples
 ]
-
-_DISAMBIGUATIONS = """DISAMBIGUATIONS:
-- Latest/current telemetry (location/speed/ignition/movement) -> AvlRecordLatest (one latest doc per asset). Historical/at-a-past-time telemetry -> AvlRecord. (Both share the AvlRecord schema.)
-- ALL alert & event LOGS live in AlertHistory. Filter by alert_info.type:
-  * 'systemAlert' = driving-behavior/system events (Idling, Harsh Acceleration/Braking/Cornering, Sharp Turn, Sudden Stop, Over Speeding, Zigzag, Frequent Start/Stop, Long Continuous Driving, Driving Without GPS, low-battery driving) — the event name is in alert_info.alert_message.
-  * 'alertRule' = user-defined AlertRule triggers.
-  * 'geofencealert' = geofence entry/exit events.
-- DEFINITIONS (not logs) live separately: user rules -> AlertRule; system event thresholds -> SystemAlertRule; geofence zones -> Geofence.
-- AlertHistory links to the asset via asset_info._id (-> Asset._id) and to the rule via alert_info.alert_rule_id (-> AlertRule._id).
-- AssetGroup = named sets of assets; link AssetGroup.assigned_assets[].asset_id -> Asset._id.
-- Driver of a vehicle -> Driver.asset_assignments (use the latest assignment).
-- Per-day aggregates -> DailyAnalytics; per-trip -> Trip."""
 
 
 # ================================
@@ -220,10 +67,12 @@ access to active vehicles, so never add active/inactive conditions yourself. An 
 vehicle is NOT "offline" and NOT "not connected" — it is a separate category that has already
 been excluded from your results.
 
-SOURCE: every state is read from the vehicle's AvlRecordLatest packet — exactly ONE latest
-packet per asset, so never add $sort/$limit to it — and that packet MUST be matched with
-is_processed: true (ignore unprocessed packets entirely). The packet's time field is
-`timestamp`. Join: Asset._id -> AvlRecordLatest.device_context.asset_id.
+SOURCE: every state is read from the vehicle's newest AvlRecordLatest packet, and that packet
+MUST be matched with is_processed: true (ignore unprocessed packets entirely). The packet's
+time field is `timestamp`. Join: Asset._id -> AvlRecordLatest.device_context.asset_id.
+AvlRecordLatest keeps one row per DEVICE and a few vehicles have two devices, so inside the
+$lookup sub-pipeline ALWAYS add {"$sort":{"timestamp":-1}},{"$limit":1} right after the
+is_processed match — that keeps each vehicle's newest packet so every vehicle counts ONCE.
 
 CONNECTIVITY — mutually exclusive; every active vehicle is in exactly ONE of these:
   * ONLINE (same thing as REPORTING / RESPONDING): has an is_processed packet whose
@@ -250,8 +99,8 @@ A vehicle that is not ONLINE has no movement state — never report it as stoppe
 
 QUERY SHAPE:
 - ONLINE / OFFLINE / NOT REPORTING, and every movement state: start from Asset, $lookup
-  AvlRecordLatest (sub-pipeline matching is_processed: true), $unwind, then filter on the
-  joined packet's timestamp / speed / ignition_status.
+  AvlRecordLatest (sub-pipeline: is_processed match, then $sort timestamp desc + $limit 1),
+  $unwind, then filter on the joined packet's timestamp / speed / ignition_status.
 - ALWAYS $unwind the joined packet for those states. Do NOT read it with
   $addFields + $first: a vehicle with no packet then yields a MISSING value, and missing
   sorts BELOW every date, so it silently passes an "older than X" test and drags NOT
@@ -273,23 +122,22 @@ _STATUS_EXAMPLE_HINTS = [
     "online", "offline", "reporting", "not-reporting", "not-connected",
     "connectivity", "status", "moving", "idle", "stopped", "illegal-movement",
 ]
+_STATUS_SECTIONS = ["asset_base", "asset_details_base", "AvlRecordLatest_base"]
 
 
 def build_menu() -> str:
     """Render the compact always-on collection menu (embedded in the tool description)."""
     lines: List[str] = ["COLLECTIONS (request sections via get_query_context):"]
-    for entry in CATALOG:
-        coll = entry["collection"]
-        lines.append(f"\n{coll} — {entry['purpose']}")
-        lines.append(f"  ids: {entry['ids']}")
-        notes = entry.get("section_notes", {})
-        sec_parts = []
-        for sec in _COLLECTION_SECTIONS.get(coll, []):
-            note = notes.get(sec)
-            sec_parts.append(f"{sec} ({note})" if note else sec)
+    for coll, info in _K.collections.items():
+        lines.append(f"\n{coll} — {info.purpose}")
+        lines.append(f"  ids: {info.ids}")
+        if not info.tenant.startswith("yes"):
+            lines.append(f"  tenant: {info.tenant}")
+        sec_parts = [f"{sec} ({note})" if note else sec for sec, note in info.section_notes.items()]
         if sec_parts:
             lines.append("  sections: " + " | ".join(sec_parts))
-    lines.append("\n" + _DISAMBIGUATIONS)
+    if "DISAMBIGUATIONS" in _K.overview:
+        lines.append("\n" + _K.overview["DISAMBIGUATIONS"])
     lines.append("\n" + _RULE_PACKS_MENU)
     return "\n".join(lines)
 
@@ -302,153 +150,46 @@ RULES = """QUERY RULES:
 - Dates: emit ALL dates as Extended JSON {"$date":"YYYY-MM-DDTHH:MM:SSZ"} — never ISODate(...) or a bare string. Resolve relative dates/times against the per-turn "Current date & time" (user's timezone).
 - TIMEZONE — emit the LOCAL wall-clock time the user means (in THEIR timezone) and do NOT convert to UTC yourself; the server converts user-local times to UTC before querying. Example: user in UTC+5 asks "from 2pm to 4pm" -> emit {"$date":"...T14:00:00Z"} and {"$date":"...T16:00:00Z"} (the server turns these into 09:00–11:00 UTC). A whole day "on 2026-06-20" -> 00:00:00 to 23:59:59 of that local date. (Relative ranges built with $$NOW are already UTC — do not adjust those.)
 - Time intent: latest/last/current -> $sort the time field desc + $limit 1; oldest/first -> asc + $limit 1; an exact time -> match a +/-5 minute window and pick the closest record. Add $sort/$limit only when ordering or a single/top-N result is implied; never for "all".
-- AvlRecord / AvlRecordLatest: ALWAYS include is_processed: true in the match — ignore unprocessed packets.
+- AvlRecord / AvlRecordLatest: ALWAYS include is_processed: true in the match — ignore unprocessed packets. AvlRecord and WaslPacket hold billions of rows: always filter them by vehicle (imei / device_context.asset_id) AND a time range.
 - Vehicle STATUS questions — online / reporting / responding, offline, not reporting, not connected, or moving / idle / stopped / parked / illegal movement — have EXACT definitions and time thresholds that you must NOT guess or infer. Call get_query_context with sections ["asset_status_rules"] FIRST; it returns those rules plus the fields, joins and examples you need. This applies to counts and breakdowns too (e.g. "how many vehicles are online"). These states are evaluated over ACTIVE vehicles only.
 - Joins: $lookup only to reach fields in a DIFFERENT collection; never join a collection to itself. Use the localField/foreignField from the get_query_context "joins" output.
 - Projection: always exclude _id ("_id":0) and never project any *_id field; use full paths, e.g. {"plate_number":"$details.plate_number"}.
-- Tenant: do NOT add sub_tenant_id yourself — the server injects it. If the starting collection has no sub_tenant_id of its own (Trip, DailyAnalytics), include a $lookup into a tenant-aware collection (Asset, AvlRecord, AlertHistory, AlertRule, AssetGroup, Driver, Device, Geofence) so the server can scope via the join.
+- Tenant: do NOT add sub_tenant_id yourself — the server injects it. If the starting collection has no tenant field of its own (Trip, DailyAnalytics, DeviceType, FuelRefill, FuelDrain, ColdChainRecord, ColdChainRecordLatest, WaslPacket, WaslPacketLatest), start from Asset or include a $lookup into a tenant-aware collection (Asset, Device, Driver, ...) joined on a field (localField/foreignField or let) so the server can scope via the join; rows that do not join are dropped. Queries are read-only: $out, $merge, $unionWith, $graphLookup and server-side JavaScript are refused. Private fields (credentials, national ids, personal contacts) are refused too.
 - Active vehicles only: every Asset access (any vehicle/plate question) is automatically restricted server-side to ACTIVE vehicles. A vehicle is ACTIVE only when ALL of these are true TOGETHER: device_availability is "AssignedToDevice" AND status is "Active" or "Maintenance" (a vehicle under maintenance still counts as active) AND it has a real device IMEI AND it has an expiry_date that is still in the future. Anything else is INACTIVE / EXPIRED SUBSCRIPTION and is excluded — not assigned to a device, any other status (Inactive, Blocked, ...), no device IMEI, an expiry_date already passed, or no expiry_date at all. Expired vehicles must never appear in any answer. If the user's question is specifically about EXPIRED / inactive / deactivated / blocked vehicles (e.g. "how many are expired", "list inactive vehicles"), do NOT build or run a query — it can only ever come back empty; instead refuse briefly (you cover active vehicles only). Treat "vehicles" as active vehicles; do NOT add these conditions yourself. Records that link to a NON-active vehicle (e.g. alerts/events/trips whose vehicle isn't active) are EXCLUDED — the server inner-joins Asset, so such rows are dropped entirely (you won't see blank-plate orphan rows).
 - Data-source preference (choose silently; never ask the user which source to use):
   1. OVERALL / all-time entity KPIs come from the entity's OWN collection. For a driver's overall scores/metrics (safety score, behavior score, performance rating, all-time average speed, total trips/distance/hours, harsh-event counts) read directly from Driver.driver_analytics / Driver.analytics / Driver.behavior / Driver.performance — do NOT recompute them from Trip or DailyAnalytics.
-  2. For a SPECIFIC TIME RANGE (today, yesterday, last 7 days, a date range) aggregate from Trip (per-trip rows: avg_speed, max_speed, distance_covered, duration, idle_time, safety/behaviour scores) or DailyAnalytics (per-day rows), whichever fits the metric.
+  2. For a SPECIFIC TIME RANGE (today, yesterday, last 7 days, a date range) aggregate from Trip (per-trip rows: avg_speed, max_speed, distance_covered, duration, idle_time, safety/behaviour scores) or DailyAnalytics (per-day rows, the day field is `date`), whichever fits the metric.
   3. For INSTANTANEOUS / raw values (current speed, a reading at a moment) use AvlRecord / AvlRecordLatest.
 - Distances are stored in METERS; return them raw (the assistant converts units when answering)."""
 
 
-# ================================
-# Tagged example bank (ported from prompt_blueprint.py; dates as Extended JSON)
-# ================================
-EXAMPLES: List[Dict[str, Any]] = [
-    {
-        "tags": ["location", "telemetry", "historical", "asset", "time-exact"],
-        "collections": ["Asset", "AvlRecord"],
-        "question": "What was the location of plate 304 XYA at 4:35 PM on Oct 10, 2025?",
-        "query": 'db.Asset.aggregate([{"$match":{"details.plate_number":{"$regex":"^304 XYA$","$options":"i"}}},{"$lookup":{"from":"AvlRecord","let":{"assetImei":"$device_details.imei","targetTime":{"$date":"2025-10-10T16:35:00Z"}},"pipeline":[{"$match":{"$expr":{"$eq":["$imei","$$assetImei"]},"is_processed":true}},{"$addFields":{"time_diff":{"$abs":{"$subtract":["$timestamp","$$targetTime"]}}}},{"$sort":{"time_diff":1}},{"$limit":1},{"$project":{"_id":0,"location":1,"timestamp":1,"speed":1,"ignition_status":1}}],"as":"closest"}},{"$unwind":"$closest"},{"$project":{"_id":0,"plate_number":"$details.plate_number","location":"$closest.location","timestamp":"$closest.timestamp","speed":"$closest.speed"}}])',
-    },
-    {
-        "tags": ["location", "telemetry", "latest", "current", "moving", "count"],
-        "collections": ["Asset", "AvlRecord"],
-        "question": "What is the latest location of plate 123 ABC?",
-        "query": 'db.Asset.aggregate([{"$match":{"details.plate_number":{"$regex":"^123 ABC$","$options":"i"}}},{"$lookup":{"from":"AvlRecordLatest","let":{"aid":"$_id"},"pipeline":[{"$match":{"$expr":{"$eq":["$device_context.asset_id","$$aid"]},"is_processed":true}}],"as":"latest"}},{"$unwind":"$latest"},{"$project":{"_id":0,"plate_number":"$details.plate_number","location":"$latest.location","speed":"$latest.speed","ignition_status":"$latest.ignition_status","timestamp":"$latest.timestamp"}}])',
-    },
-    {
-        "tags": ["trips", "asset", "distance"],
-        "collections": ["Asset", "Trip"],
-        "question": "Show all trips for plate 243.",
-        "query": 'db.Asset.aggregate([{"$match":{"details.plate_number":{"$regex":"^243$","$options":"i"}}},{"$lookup":{"from":"Trip","localField":"_id","foreignField":"driver_info.asset_id","as":"trips"}},{"$unwind":"$trips"},{"$project":{"_id":0,"plate_number":"$details.plate_number","start_at":"$trips.start_at","end_at":"$trips.end_at","duration":"$trips.duration","distance_covered":"$trips.distance_covered","avg_speed":"$trips.avg_speed"}}])',
-    },
-    {
-        "tags": ["asset", "details", "plate", "type"],
-        "collections": ["Asset"],
-        "question": "What is the plate type of plate 123 ABC?",
-        "query": 'db.Asset.aggregate([{"$match":{"details.plate_number":{"$regex":"^123 ABC$","$options":"i"}}},{"$project":{"_id":0,"plate_number":"$details.plate_number","plate_type":"$details.plate_type"}}])',
-    },
-    {
-        "tags": ["events", "alerts", "idling", "alerthistory", "systemalert", "asset", "time-range", "behavior"],
-        "collections": ["Asset", "AlertHistory"],
-        "question": "List Idling events for plate 123 ABC yesterday.",
-        "query": 'db.Asset.aggregate([{"$match":{"details.plate_number":{"$regex":"^123 ABC$","$options":"i"}}},{"$lookup":{"from":"AlertHistory","let":{"aid":"$_id"},"pipeline":[{"$match":{"$expr":{"$eq":["$asset_info._id","$$aid"]},"alert_info.type":"systemAlert","alert_info.alert_message":{"$regex":"idling","$options":"i"},"created_at":{"$gte":{"$date":"2026-01-01T00:00:00Z"},"$lte":{"$date":"2026-01-02T00:00:00Z"}}}}],"as":"alerts"}},{"$unwind":"$alerts"},{"$project":{"_id":0,"plate_number":"$details.plate_number","alert":"$alerts.alert_info.alert_message","severity":"$alerts.alert_info.severity","timestamp":"$alerts.created_at","location":"$alerts.alert_info.location"}}])',
-    },
-    {
-        "tags": ["events", "alerts", "harshbraking", "behavior", "systemalert", "alerthistory"],
-        "collections": ["AlertHistory"],
-        "question": "Show all harsh braking events.",
-        "query": 'db.AlertHistory.aggregate([{"$match":{"alert_info.type":"systemAlert","alert_info.alert_message":{"$regex":"harsh[-_\\\\s]*braking|harshbraking","$options":"i"}}},{"$project":{"_id":0,"alert":"$alert_info.alert_message","severity":"$alert_info.severity","timestamp":"$created_at","location":"$alert_info.location"}}])',
-    },
-    {
-        "tags": ["geofence", "asset", "assignment"],
-        "collections": ["Geofence", "Asset"],
-        "question": "Which vehicles are assigned to Geofence A?",
-        "query": 'db.Geofence.aggregate([{"$match":{"name":{"$regex":"^Geofence A$","$options":"i"}}},{"$lookup":{"from":"Asset","localField":"asset_assignments.asset_id","foreignField":"_id","as":"asset"}},{"$unwind":"$asset"},{"$project":{"_id":0,"geofence":"$name","plate_number":"$asset.details.plate_number"}}])',
-    },
-    {
-        "tags": ["geofence", "alerts", "alerthistory", "asset", "geofencealert"],
-        "collections": ["Asset", "AlertHistory"],
-        "question": "Show geofence alerts for plate 123 ABC.",
-        "query": 'db.Asset.aggregate([{"$match":{"details.plate_number":{"$regex":"^123 ABC$","$options":"i"}}},{"$lookup":{"from":"AlertHistory","let":{"aid":"$_id"},"pipeline":[{"$match":{"$expr":{"$eq":["$asset_info._id","$$aid"]},"alert_info.type":"geofencealert"}}],"as":"alerts"}},{"$unwind":"$alerts"},{"$project":{"_id":0,"plate_number":"$details.plate_number","alert":"$alerts.alert_info.alert_message","timestamp":"$alerts.created_at","location":"$alerts.alert_info.location","status":"$alerts.alert_info.status"}}])',
-    },
-    {
-        "tags": ["alerts", "alerthistory", "time-range"],
-        "collections": ["AlertHistory"],
-        "question": "Get all alerts from 2025-10-01 to 2025-10-31.",
-        "query": 'db.AlertHistory.aggregate([{"$match":{"created_at":{"$gte":{"$date":"2025-10-01T00:00:00Z"},"$lte":{"$date":"2025-10-31T23:59:59Z"}}}},{"$project":{"_id":0,"type":"$alert_info.type","alert":"$alert_info.alert_message","severity":"$alert_info.severity","timestamp":"$created_at","status":"$alert_info.status"}}])',
-    },
-    {
-        "tags": ["reporting", "connectivity", "status", "not-reporting", "avlrecordlatest", "asset"],
-        "collections": ["Asset", "AvlRecord"],
-        "question": "Which vehicles are not reporting? (has a packet, but older than 12 hours)",
-        "query": 'db.Asset.aggregate([{"$lookup":{"from":"AvlRecordLatest","let":{"aid":"$_id"},"pipeline":[{"$match":{"$expr":{"$eq":["$device_context.asset_id","$$aid"]},"is_processed":true}},{"$project":{"_id":0,"timestamp":1}}],"as":"latest"}},{"$unwind":"$latest"},{"$match":{"$expr":{"$lt":["$latest.timestamp",{"$dateSubtract":{"startDate":"$$NOW","unit":"hour","amount":12}}]}}},{"$project":{"_id":0,"plate_number":"$details.plate_number","last_reported":"$latest.timestamp"}}])',
-    },
-    {
-        "tags": ["offline", "connectivity", "status", "reporting", "avlrecordlatest", "asset"],
-        "collections": ["Asset", "AvlRecord"],
-        "question": "Which vehicles are offline? (last packet older than 30 minutes but within 12 hours)",
-        "query": 'db.Asset.aggregate([{"$lookup":{"from":"AvlRecordLatest","let":{"aid":"$_id"},"pipeline":[{"$match":{"$expr":{"$eq":["$device_context.asset_id","$$aid"]},"is_processed":true}},{"$project":{"_id":0,"timestamp":1}}],"as":"latest"}},{"$unwind":"$latest"},{"$match":{"$expr":{"$and":[{"$lt":["$latest.timestamp",{"$dateSubtract":{"startDate":"$$NOW","unit":"minute","amount":30}}]},{"$gte":["$latest.timestamp",{"$dateSubtract":{"startDate":"$$NOW","unit":"hour","amount":12}}]}]}}},{"$project":{"_id":0,"plate_number":"$details.plate_number","last_reported":"$latest.timestamp"}}])',
-    },
-    {
-        "tags": ["moving", "idle", "stopped", "illegal-movement", "online", "status", "connectivity", "avlrecordlatest", "asset", "count"],
-        "collections": ["Asset", "AvlRecord"],
-        "question": "How many vehicles are currently moving? (online + speed > 0 + ignition On)",
-        "query": 'db.Asset.aggregate([{"$lookup":{"from":"AvlRecordLatest","let":{"aid":"$_id"},"pipeline":[{"$match":{"$expr":{"$eq":["$device_context.asset_id","$$aid"]},"is_processed":true}},{"$project":{"_id":0,"timestamp":1,"speed":1,"ignition_status":1}}],"as":"latest"}},{"$unwind":"$latest"},{"$match":{"$expr":{"$gte":["$latest.timestamp",{"$dateSubtract":{"startDate":"$$NOW","unit":"minute","amount":30}}]},"latest.speed":{"$gt":0},"latest.ignition_status":{"$regex":"^on$","$options":"i"}}},{"$count":"moving_vehicles"}])',
-    },
-    {
-        "tags": ["not-connected", "connectivity", "status", "avlrecordlatest", "asset"],
-        "collections": ["Asset", "AvlRecord"],
-        "question": "Which vehicles are not connected? (no processed packet at all)",
-        "query": 'db.Asset.aggregate([{"$lookup":{"from":"AvlRecordLatest","let":{"aid":"$_id"},"pipeline":[{"$match":{"$expr":{"$eq":["$device_context.asset_id","$$aid"]},"is_processed":true}},{"$project":{"_id":0,"timestamp":1}}],"as":"latest"}},{"$match":{"latest":{"$eq":[]}}},{"$project":{"_id":0,"plate_number":"$details.plate_number"}}])',
-    },
-    {
-        "tags": ["assetgroup", "group", "asset", "vehicles"],
-        "collections": ["AssetGroup", "Asset"],
-        "question": "Which vehicles are in the group SUZUKI 2026?",
-        "query": 'db.AssetGroup.aggregate([{"$match":{"name":{"$regex":"^SUZUKI 2026$","$options":"i"}}},{"$lookup":{"from":"Asset","localField":"assigned_assets.asset_id","foreignField":"_id","as":"assets"}},{"$unwind":"$assets"},{"$project":{"_id":0,"group":"$name","plate_number":"$assets.details.plate_number"}}])',
-    },
-    {
-        "tags": ["device", "asset", "imei"],
-        "collections": ["Asset"],
-        "question": "What device is installed on plate 123 ABC?",
-        "query": 'db.Asset.aggregate([{"$match":{"details.plate_number":{"$regex":"^123 ABC$","$options":"i"}}},{"$project":{"_id":0,"plate_number":"$details.plate_number","imei":"$details.device_details.imei","device_name":"$details.device_details.device_name"}}])',
-    },
-    {
-        "tags": ["dailyanalytics", "distance", "asset", "analytics"],
-        "collections": ["Asset", "DailyAnalytics"],
-        "question": "Distance covered for plate 123 ABC on 2025-02-01.",
-        "query": 'db.Asset.aggregate([{"$match":{"details.plate_number":{"$regex":"^123 ABC$","$options":"i"}}},{"$lookup":{"from":"DailyAnalytics","localField":"_id","foreignField":"asset_id","as":"daily"}},{"$unwind":"$daily"},{"$match":{"daily.timestamp":{"$gte":{"$date":"2025-02-01T00:00:00Z"},"$lte":{"$date":"2025-02-01T23:59:59Z"}}}},{"$project":{"_id":0,"plate_number":"$details.plate_number","date":"$daily.timestamp","distance_m":"$daily.distance_m"}}])',
-    },
-    {
-        "tags": ["driver", "assignment", "asset"],
-        "collections": ["Driver", "Asset"],
-        "question": "Who is the driver of plate LEB 8172? (latest assignment)",
-        "query": 'db.Driver.aggregate([{"$unwind":"$asset_assignments"},{"$match":{"asset_assignments.created_at":{"$type":"date"}}},{"$sort":{"_id":1,"asset_assignments.created_at":-1}},{"$group":{"_id":"$_id","doc":{"$first":"$$ROOT"},"latest_assignment":{"$first":"$asset_assignments"}}},{"$lookup":{"from":"Asset","pipeline":[{"$match":{"details.plate_number":{"$regex":"^LEB 8172$","$options":"i"}}},{"$project":{"_id":1}},{"$limit":1}],"as":"matched_asset"}},{"$unwind":"$matched_asset"},{"$match":{"$expr":{"$eq":["$latest_assignment._id","$matched_asset._id"]}}},{"$project":{"_id":0,"driver_name":{"$trim":{"input":{"$concat":[{"$ifNull":["$doc.profile.first_name",""]}," ",{"$ifNull":["$doc.profile.last_name",""]}]}}}}}])',
-    },
-    {
-        "tags": ["distance", "trips", "aggregate", "asset"],
-        "collections": ["Trip", "Asset"],
-        "question": "Which vehicles covered more than 10 km in the last week?",
-        "query": 'db.Trip.aggregate([{"$match":{"driver_info.asset_id":{"$exists":true,"$nin":[null,""]},"distance_covered":{"$type":"number"}}},{"$match":{"$expr":{"$gte":["$start_at",{"$dateSubtract":{"startDate":"$$NOW","unit":"day","amount":7}}]}}},{"$group":{"_id":"$driver_info.asset_id","totalMeters":{"$sum":"$distance_covered"}}},{"$match":{"totalMeters":{"$gt":10000}}},{"$lookup":{"from":"Asset","localField":"_id","foreignField":"_id","as":"asset"}},{"$unwind":"$asset"},{"$project":{"_id":0,"plate_number":"$asset.details.plate_number","totalKm":{"$divide":["$totalMeters",1000]}}}])',
-    },
-]
+def _format_example(ex: Example) -> str:
+    return f"Q: {ex.question}\n{ex.query}"
 
 
 def select_examples(sections: List[str], intent: Optional[str], k: int = 3) -> List[str]:
-    """Pick the k most relevant examples by tag/collection/keyword overlap (no ML)."""
+    """Keyword fallback: the k most relevant examples by tag/collection/word overlap, formatted."""
+    return [_format_example(ex) for ex in _select_example_items(sections, intent, k)]
+
+
+def _select_example_items(sections: List[str], intent: Optional[str], k: int = 3) -> List[Example]:
     tokens = set()
     for s in sections or []:
         tokens.update(t for t in _norm(s).replace("details", " ").split() if t)
         for part in re.split(r"[_\s]+", (s or "").lower()):
             if part:
                 tokens.add(part)
-    parents = {_SECTION_PARENT.get(_NORM_SECTION.get(_norm(s), ""), "") for s in (sections or [])}
-    parents = {p for p in parents if p}
+    parents = {_K.section_parent.get(_NORM_SECTION.get(_norm(s), ""), "") for s in (sections or [])}
+    parents |= {_NORM_COLLECTION[_norm(s)] for s in (sections or []) if _norm(s) in _NORM_COLLECTION}
+    parents.discard("")
     for w in re.split(r"[^a-z0-9]+", (intent or "").lower()):
         if len(w) > 2:
             tokens.add(w)
 
-    scored: List[Tuple[float, Dict[str, Any]]] = []
-    for ex in EXAMPLES:
-        score = 0.0
-        score += 2.0 * len(parents.intersection(ex.get("collections", [])))
-        for tag in ex.get("tags", []):
+    scored: List[Tuple[float, Example]] = []
+    for ex in _K.examples:
+        score = 2.0 * len(parents.intersection(ex.collections))
+        for tag in ex.tags:
             tnorm = _norm(tag)
             if tag in tokens or tnorm in tokens or any(tnorm in tk or tk in tnorm for tk in tokens):
                 score += 1.0
@@ -456,8 +197,7 @@ def select_examples(sections: List[str], intent: Optional[str], k: int = 3) -> L
             scored.append((score, ex))
 
     scored.sort(key=lambda x: x[0], reverse=True)
-    chosen = [ex for _s, ex in scored[:k]]
-    return [f"Q: {ex['question']}\n{ex['query']}" for ex in chosen]
+    return [ex for _s, ex in scored[:k]]
 
 
 def _resolve_sections(requested: List[str]) -> Tuple[List[str], Dict[str, List[str]]]:
@@ -470,14 +210,10 @@ def _resolve_sections(requested: List[str]) -> Tuple[List[str], Dict[str, List[s
     extra_available: Dict[str, List[str]] = {}
     for name in requested or []:
         n = _norm(name)
-        if not n:
+        if not n or n in _STATUS_RULES_ALIASES:  # rule packs are attached separately
             continue
-        # AvlRecordLatest is handled as its own logical collection in get_query_context.
-        if n in ("avlrecordlatest", "avlrecordslatest"):
-            continue
-        # Rule packs are not sections; get_query_context attaches their text separately.
-        if n in _STATUS_RULES_ALIASES:
-            continue
+        if n == "avlrecordslatest":
+            n = "avlrecordlatest"
         if n in _NORM_SECTION:  # exact section
             sec = _NORM_SECTION[n]
             if sec not in resolved:
@@ -485,74 +221,163 @@ def _resolve_sections(requested: List[str]) -> Tuple[List[str], Dict[str, List[s
             continue
         if n in _NORM_COLLECTION:  # top-level collection -> defaults + list the rest
             coll = _NORM_COLLECTION[n]
-            for sec in _DEFAULT_SECTIONS.get(coll, _COLLECTION_SECTIONS.get(coll, [])[:1]):
-                if sec not in resolved:
+            info = _K.collections[coll]
+            for sec in info.default_sections:
+                if sec in _K.section_fields and sec not in resolved:
                     resolved.append(sec)
-            others = [s for s in _COLLECTION_SECTIONS.get(coll, []) if s not in resolved]
+            others = [s for s in info.section_notes if s not in resolved]
             if others:
                 extra_available[coll] = others
             continue
         # fuzzy contains match against sections
-        match = next((s for k, s in _NORM_SECTION.items() if n and (n in k or k in n)), None)
+        match = next((s for key, s in _NORM_SECTION.items() if n in key or key in n), None)
         if match and match not in resolved:
             resolved.append(match)
     return resolved, extra_available
 
 
-def get_query_context(sections: List[str], intent: Optional[str] = None) -> Dict[str, Any]:
-    """Return pruned fields + relevant joins + 2-3 relevant examples for the requested sections."""
+def _joins_between(collections: List[str]) -> List[str]:
+    wanted = set(collections)
+    return [r.text() for r in _K.relationships
+            if r.left in wanted and r.right in wanted and r.left != r.right]
+
+
+_ALREADY_GIVEN_NOTE = (
+    "Items marked 'given earlier' were already sent in this conversation - reuse those exact "
+    "field paths, joins and examples. If you no longer have them, call get_query_context again "
+    "with refresh: true."
+)
+
+
+def _render(by_collection: Dict[str, List[str]], extra: Dict[str, List[str]], memory: Optional[ConversationView],
+            sent: List[str]) -> str:
+    """Schema text; with a memory, lines already given in this conversation are left out."""
+    blocks: List[str] = []
+    for coll in by_collection:
+        info = _K.collections[coll]
+        lines = by_collection[coll] + [ln for ln in extra.get(coll, []) if ln not in by_collection[coll]]
+        values = [f"- {e}" for e in info.enums]
+        notes = [f"- {n}" for n in info.notes]
+
+        def new(items: List[str]) -> List[str]:
+            fresh = [i for i in items if not (memory and memory.seen(f"{coll}|{i}"))]
+            sent.extend(f"{coll}|{i}" for i in fresh)
+            return fresh
+
+        head_key = f"{coll}|_head"
+        head_seen = bool(memory and memory.seen(head_key))
+        new_lines, new_values, new_notes = new(lines), new(values), new(notes)
+        given = len(lines) - len(new_lines)
+        if head_seen and not (new_lines or new_values or new_notes):
+            blocks.append(f"Collection: {coll} — all {len(lines)} fields, values and notes given earlier")
+            continue
+        sent.append(head_key)
+        block = f"Collection: {coll} — {info.purpose}\nTenant: {info.tenant}\nFields:\n" + "\n".join(new_lines)
+        if given:
+            block += f"\n(+{given} more fields given earlier)"
+        if new_values:
+            block += "\nValues:\n" + "\n".join(new_values)
+        if new_notes:
+            block += "\nNotes:\n" + "\n".join(new_notes)
+        blocks.append(block)
+    return "\n\n".join(blocks) if blocks else "(no matching sections; check the menu names)"
+
+
+def get_query_context(sections: List[str], intent: Optional[str] = None, question: Optional[str] = None,
+                      memory: Optional[ConversationView] = None) -> Dict[str, Any]:
+    """
+    Fields + enums/notes + exact joins + 2-3 examples for the requested sections.
+
+    memory: what this conversation already received (FleetiAgent.context_memory). Lines,
+    joins and examples given in recent turns are replaced by a short "given earlier" marker.
+    The result is kept under MAX_CONTEXT_TOKENS by dropping optional extras first; the
+    requested fields, values, notes, joins and rules are never dropped.
+    """
     requested = list(sections or [])
-    wants_latest = any(_norm(s) in ("avlrecordlatest", "avlrecordslatest") for s in requested)
     wants_status_rules = any(_norm(s) in _STATUS_RULES_ALIASES for s in requested)
     if wants_status_rules:
         # Every connectivity/movement question reads the latest packet and identifies the
         # vehicle by plate, so pull those in automatically: one call returns the rules plus
         # the fields, joins and examples needed to write the query.
-        wants_latest = True
-        requested += ["asset_base", "asset_details_base"]
+        requested += _STATUS_SECTIONS
 
     resolved, extra_available = _resolve_sections(requested)
 
-    # Group fields by parent collection, dedupe field lines.
+    # Group fields by owning collection, dedupe field lines.
     by_collection: Dict[str, List[str]] = {}
     for sec in resolved:
-        parent = _SECTION_PARENT.get(sec, sec)
-        bucket = by_collection.setdefault(parent, [])
-        for line in _SECTION_FIELDS.get(sec, "").splitlines():
-            if line and line not in bucket:
+        bucket = by_collection.setdefault(_K.section_parent[sec], [])
+        for line in _K.section_fields.get(sec, []):
+            if line not in bucket:
                 bucket.append(line)
+    involved = list(by_collection)
 
-    schema_blocks: List[str] = []
-    if wants_latest:
-        # AvlRecordLatest shares AvlRecord's fields but is its own collection (one latest doc/asset).
-        schema_blocks.append(
-            "Collection: AvlRecordLatest (latest telemetry — exactly one most-recent record per "
-            "asset; query it directly and do NOT add $sort/$limit)\nFields:\n"
-            + _SECTION_FIELDS.get("AvlRecord_base", "")
-        )
-    for coll, lines in by_collection.items():
-        schema_blocks.append(f"Collection: {coll}\nFields:\n" + "\n".join(lines))
-    schemas = "\n\n".join(schema_blocks) if schema_blocks else "(no matching sections; check the menu names)"
+    # RAG: relevant extra fields of these collections + best examples + related collections.
+    query_text = " ".join(t for t in (question, intent) if t).strip()
+    hits = rag.retrieve(query_text, involved) if query_text else None
+    rag_fields: Dict[str, List[str]] = dict(hits["fields"]) if hits else {}
 
-    joins = generate_relationship_rules(sorted(by_collection.keys()))
-    if wants_latest:
-        joins = [
-            'Asset -> AvlRecordLatest: localField "_id", foreignField "device_context.asset_id". '
-            "AvlRecordLatest holds only the single latest record per asset, so do NOT add $sort or $limit."
-        ] + joins
+    if hits and not wants_status_rules:
+        example_items = [_EXAMPLES_BY_KEY[key] for key in hits["examples"] if key in _EXAMPLES_BY_KEY]
+    else:
+        basis = resolved + requested + (_STATUS_EXAMPLE_HINTS if wants_status_rules else [])
+        example_items = _select_example_items(basis, intent)
+    examples_seen = [ex for ex in example_items if memory and memory.seen(f"example|{ex.key}")]
+    example_items = [ex for ex in example_items if ex not in examples_seen]
 
-    example_basis = resolved + list(requested)
-    if wants_latest:
-        example_basis += ["AvlRecord", "latest", "location"]
-    if wants_status_rules:
-        example_basis += _STATUS_EXAMPLE_HINTS
-    examples = select_examples(example_basis, intent)
+    joins_all = _joins_between(involved)
+    joins = [j for j in joins_all if not (memory and memory.seen(f"join|{j}"))]
+    related = [f"{c} — {_K.collections[c].purpose}" for c, _s in (hits["related"] if hits else []) if c in _K.collections]
 
-    result: Dict[str, Any] = {}
-    if wants_status_rules:
-        # First key so the model reads the authoritative thresholds before the schema.
-        result["asset_status_rules"] = ASSET_STATUS_RULES
-    result.update({"schemas": schemas, "joins": joins, "examples": examples})
-    if extra_available:
-        result["other_sections_available"] = extra_available
+    def build(sent: List[str]) -> Dict[str, Any]:
+        result: Dict[str, Any] = {}
+        if wants_status_rules:
+            # First key so the model reads the authoritative thresholds before the schema.
+            result["asset_status_rules"] = ASSET_STATUS_RULES
+        result["schemas"] = _render(by_collection, rag_fields, memory, sent)
+        result["joins"] = joins
+        if len(joins) < len(joins_all):
+            result["joins_given_earlier"] = len(joins_all) - len(joins)
+        result["examples"] = [_format_example(ex) for ex in example_items]
+        if examples_seen:
+            result["examples_given_earlier"] = [ex.question for ex in examples_seen]
+        if extra_available:
+            result["other_sections_available"] = extra_available
+        if related:
+            result["maybe_relevant_collections"] = related
+        if memory and (len(joins) < len(joins_all) or examples_seen or "given earlier" in result["schemas"]):
+            result["note"] = _ALREADY_GIVEN_NOTE
+        return result
+
+    # Token budget: drop optional extras (least important first) until the result fits.
+    sent: List[str] = []
+    result = build(sent)
+    tokens = count_tokens(result)
+    trimmed: List[str] = []
+    for step in ("related", "examples", "rag_fields", "other_sections"):
+        if tokens <= MAX_CONTEXT_TOKENS:
+            break
+        if step == "related" and related:
+            related = []
+        elif step == "examples" and len(example_items) > 1:
+            example_items = example_items[:1]
+        elif step == "rag_fields" and rag_fields:
+            rag_fields = {}
+        elif step == "other_sections" and extra_available:
+            extra_available = {}
+        else:
+            continue
+        trimmed.append(step)
+        sent = []
+        result = build(sent)
+        tokens = count_tokens(result)
+
+    if memory:
+        memory.mark(sent + [f"join|{j}" for j in joins] + [f"example|{ex.key}" for ex in example_items])
+    logger.info(
+        "get_query_context | sections=%s | collections=%s | retrieval=%s | examples=%d | tokens=%d%s%s",
+        requested, involved, "rag" if hits else "keyword", len(example_items), tokens,
+        f" | trimmed={trimmed}" if trimmed else "",
+        f" | reused={len(joins_all) - len(joins)} joins, {len(examples_seen)} examples" if memory else "",
+    )
     return result

@@ -1,0 +1,9 @@
+Collection: Driver
+Fields:
+- assigned_to: usually null (users / groups the record is assigned to)
+- created_by: string or null (user who created the record)
+- metadata: object (extra driver metadata)
+- person_id: string (external person id of the driver)
+- training: array (trainings of the driver)
+- updated_at: BSON Date or null (when the record was last changed)
+- updated_by: string or null (user who last changed the record)

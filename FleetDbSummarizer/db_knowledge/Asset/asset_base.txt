@@ -1,0 +1,20 @@
+Collection: Asset
+Fields:
+- _id: uuid
+- type: string
+- availability: string
+- device_availability: string
+- category: string
+- sequence_number: string
+- installation_type: string
+- assigned_devices: array<string>|string
+- status: string
+- sub_tenant_id: string
+- created_at: BSON Date
+- expiry_date: BSON Date
+- name: string (display name of the vehicle)
+- renewal_date: BSON Date|null
+- installation_date: BSON Date|null
+- group_id: string (links to AssetGroup._id)
+- group_name: string
+- asset_id: string (legacy id, often empty - NOT a join key; join on _id)

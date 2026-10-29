@@ -5,14 +5,22 @@ python-dotenv>=1.0.0
 fastapi>=0.104.0
 uvicorn>=0.24.0
 openpyxl>=3.1.0  # XLSX export for large result sets (export_results tool)
-# (Removed legacy RAG deps chromadb / sentence-transformers / rank-bm25 — the
-#  /chat agent uses the deterministic schema_service, no embeddings/cross-encoder.)
+# (Removed legacy RAG deps chromadb / rank-bm25 / cross-encoder.)
+
+# RAG (FleetDbSummarizer/rag): Nomic Embed Text + Postgres/pgvector (HNSW).
+# Install torch CPU-only first:  pip install --index-url https://download.pytorch.org/whl/cpu torch==2.5.1
+sentence-transformers==3.3.1
+einops==0.8.0  # required by the Nomic model code
+psycopg[binary]==3.2.3
+pgvector==0.3.6
+tiktoken==0.8.0  # token counting for the context budget (FleetiAgent/context_memory.py)
 
 # Optional but recommended for stability and debugging
 loguru>=0.7.0
 json5 
 pyyaml
 pytz>=2019.1,<2023.0
+python-dateutil>=2.8.2
 
 
 # fleeti reports

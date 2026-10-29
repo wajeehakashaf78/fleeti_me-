@@ -1,0 +1,15 @@
+Collection: Sim
+Purpose: SIM card inventory: ICCID, MSISDN, plan/usage, which device/asset it is attached to.
+Use for: SIM status, data plan, link phone number / ICCID to a device.
+Do not confuse with: Not GPS data. Connectivity of the vehicle still comes from AvlRecordLatest.
+Tenant field: yes (sub_tenant_id)
+IDs: _id (<- Device.sim_id); device_id (->Device._id); iccid; msisdn
+Default sections: Sim_base
+Enums:
+- status: 0 | 1 (int code)
+Notes:
+- Device.sim_id = Sim._id and Sim.device_id = Device._id (NOT Device.device_id).
+- Sim.asset_id is almost always empty - reach the vehicle through Device.asset_id.
+Sections:
+- Sim_base
+- Sim_extra: other fields (audit: created/updated by/at, and less common fields)

@@ -1,5 +1,0 @@
-Collection: Asset
-Fields:
-- details.special_equipment.chiller_brand_model: string
-- details.special_equipment.refrigeration_unit_status: string|null
-

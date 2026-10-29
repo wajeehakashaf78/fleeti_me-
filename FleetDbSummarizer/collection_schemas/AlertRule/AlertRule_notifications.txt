@@ -1,7 +1,0 @@
-Collection: AlertRule
-Fields:
-- notifications: array<object>
-- notifications[].notification_actions: string
-- notifications[].recepients: array<string>
-- notifications[].message_template: string
-

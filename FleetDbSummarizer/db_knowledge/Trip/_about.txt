@@ -1,0 +1,25 @@
+Collection: Trip
+Purpose: Per-trip records: start/end, distance, duration, speeds, idling, harsh events, fuel, scores.
+Use for: Trip list for a vehicle/driver, distance today, max speed on a trip.
+Do not confuse with: Not raw GPS breadcrumbs (AvlRecord). Not daily totals only (there is also DailyAnalytics outside this set).
+Tenant field: sub_tenant_id is on almost every row, but the server scopes Trip through a join to Asset - start from Asset or $lookup Asset
+IDs: driver_info.asset_id (->Asset._id); driver_info.driver_info.id (->Driver._id); imei
+Default sections: Trip_base
+Notes:
+- Join to the vehicle on driver_info.asset_id = Asset._id (driver_info.asset_name also holds the vehicle name).
+- distance_covered is meters; duration / idle_time are seconds.
+- Unique index on (imei, start_at).
+Sections:
+- Trip_base: start_at, end_at, distance_covered (meters), duration, avg/max speed, idle_time
+- Trip_Analytics: per-trip behavior/safety analytics
+- Trip_extra: other fields (audit: created/updated by/at, and less common fields)
+Indexes:
+- driver_info.id + created_at
+- imei + created_at
+- start_at + end_at + created_at
+- imei + timestamp
+- driver_info.id + start_at + end_at
+- driver_info.asset_id + start_at + created_at
+- start_at + driver_info.asset_id
+- sub_tenant_id
+- imei + start_at (unique)

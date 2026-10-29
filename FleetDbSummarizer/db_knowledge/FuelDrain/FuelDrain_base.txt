@@ -1,0 +1,11 @@
+Collection: FuelDrain
+Fields:
+- _id: uuid
+- imei: string
+- start_ts: BSON Date (drain start time - use for date filters)
+- stop_ts: BSON Date
+- start_fuel: float
+- end_fuel: float
+- drain_ltrs: float (litres drained (possible theft))
+- min_speed: int
+- created_at: BSON Date

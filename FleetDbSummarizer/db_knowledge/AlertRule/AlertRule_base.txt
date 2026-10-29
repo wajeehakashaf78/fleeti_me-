@@ -1,0 +1,14 @@
+Collection: AlertRule
+Fields:
+- _id: uuid
+- status: string
+- priority: string
+- system_alert_rule: bool
+- basic_info.rule_name: string
+- basic_info.description: string
+- basic_info.severity: string
+- basic_info.enable_rule: bool
+- sub_tenant_id: string
+- created_at: BSON Date
+- alert_type: string
+- is_system_generated: bool

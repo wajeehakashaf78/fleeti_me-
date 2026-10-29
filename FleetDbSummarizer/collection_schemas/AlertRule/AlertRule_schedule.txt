@@ -1,7 +1,0 @@
-Collection: AlertRule
-Fields:
-- schedule.type: string
-- schedule.time_configuration.active_days: array<string>
-- schedule.time_configuration.atart_time: string
-- schedule.time_configuration.end_time: string
-

@@ -1,0 +1,6 @@
+Collection: WaslPacketLatest
+Fields:
+- _id: uuid
+- imei: string
+- avl_record_id: string
+- timestamp: BSON Date

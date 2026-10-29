@@ -1,0 +1,15 @@
+Collection: ColdChainRecordLatest
+Purpose: Latest cold-chain reading per device (current probe temp/humidity, alarm flags).
+Use for: Current fridge/cold-box temperature status.
+Do not confuse with: Not full history.
+Tenant field: partial (missing on some rows) - scope through Device/Asset by imei
+IDs: imei; device_id (->Device)
+Default sections: ColdChainRecordLatest_base
+Notes:
+- Small: one row per cold-chain device (~30 rows).
+- Latest cold-chain state per device.
+Sections:
+- ColdChainRecordLatest_base
+- ColdChainRecordLatest_raw: raw / processing fields of the packet (debugging; large values)
+- ColdChainRecordLatest_network: 4G / Wi-Fi / LoRa network status of the device
+- ColdChainRecordLatest_extra: other fields (audit: created/updated by/at, and less common fields)

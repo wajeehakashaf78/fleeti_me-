@@ -1,0 +1,9 @@
+Collection: Asset
+Fields:
+- assigned_to: array (users / groups the record is assigned to)
+- assigned_users: string (users the vehicle is assigned to)
+- created_by: string (user who created the record)
+- so_number: string (sales order number)
+- updated_at: BSON Date (when the record was last changed)
+- updated_by: string or null (user who last changed the record)
+- vercel_logs: usually null (internal log field)

@@ -1,0 +1,5 @@
+Collection: Driver
+Fields:
+- medical.medical_certificate_expiry: BSON Date
+- medical.medical_certificate_status: int
+- medical.fitness_for_duty: int

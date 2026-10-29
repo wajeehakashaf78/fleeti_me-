@@ -1,0 +1,19 @@
+Collection: WaslCompany
+Purpose: Saudi WASL company registration for a sub-tenant - commercial record, manager contacts, and the company wasl_key returned by WASL.
+Use for: Whether the company is registered on WASL, company identity / CR number, manager contact, Success/Failed reply, Active/Inactive status.
+Do not confuse with: Not vehicles or drivers. Not GPS packets. Keys here are reused when registering vehicles/drivers and when pushing locations.
+Tenant field: yes (sub_tenant_id)
+IDs: sub_tenant_id; wasl_key (->Device.wasl.company_wasl_key)
+Default sections: WaslCompany_base
+Enums:
+- status: Active | Inactive
+- reply: Success | Failed
+- register_type: Company | Individual
+- activity: DEFAULT | SPECIALITY_TRANSPORT | TOW_CAR
+- response: Success | identityNumber is not valid | No Response From Wasl (seen)
+Notes:
+- wasl_key is the company reference used by WASL and often cached on Device.wasl.company_wasl_key.
+- reply / response show registration outcome (Success / Failed).
+Sections:
+- WaslCompany_base
+- WaslCompany_extra: other fields (audit: created/updated by/at, and less common fields)

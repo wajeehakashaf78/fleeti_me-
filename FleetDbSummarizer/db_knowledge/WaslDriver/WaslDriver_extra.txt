@@ -1,0 +1,11 @@
+Collection: WaslDriver
+Fields:
+- added_by_datetime: BSON Date (when the record was added)
+- added_by_user_id: usually null (user who added the record)
+- created_by: string (user who created the record)
+- updated_at: usually null (when the record was last changed)
+- updated_by: usually null (user who last changed the record)
+- identity_number: string (national / company identity number)
+- mobile_number: string (driver mobile)
+- date_of_birth_gregorian: string or null (date of birth (gregorian))
+- date_of_birth_hijri: usually null (date of birth (hijri))

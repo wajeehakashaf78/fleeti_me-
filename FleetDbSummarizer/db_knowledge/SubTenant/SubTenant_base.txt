@@ -1,0 +1,13 @@
+Collection: SubTenant
+Fields:
+- _id: uuid
+- name: string
+- arabic_name: string
+- status: string (Active)
+- subtenant_status: string (Active | Suspended)
+- city: string
+- region: string
+- max_devices: int
+- registration_type: string
+- industry: string
+- created_at: BSON Date

@@ -1,0 +1,16 @@
+Collection: AlertHistory
+Purpose: ALL alert/event LOGS: driving-behavior/system events, user AlertRule triggers, AND geofence entry/exit.
+Use for: Idling, harsh braking/acceleration/cornering, over-speeding, geofence entry/exit, rule triggers - lists and counts.
+Do not confuse with: Not rule DEFINITIONS (AlertRule / SystemAlertRule) and not zone definitions (Geofence).
+Tenant field: yes (sub_tenant_id)
+IDs: asset_info._id (->Asset._id); alert_info.alert_rule_id (->AlertRule._id); alert_info.avl_packet_id (->AvlRecord._id)
+Default sections: AlertHistory_base
+Enums:
+- alert_info.type: systemAlert | alertRule | geofencealert
+- alert_info.severity: Critical | Warning | Info
+Notes:
+- The event/alert name is in alert_info.alert_message - match it with a flexible case-insensitive regex.
+- created_at is the event time.
+- asset_info.asset_name holds the vehicle name, so a plate-free listing needs no join.
+Sections:
+- AlertHistory_base: alert_info.type, alert_info.alert_message (event name), severity, status, created_at (event time), location

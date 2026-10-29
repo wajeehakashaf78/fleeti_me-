@@ -32,10 +32,42 @@ _MAX_QUERY_ROWS = int(os.getenv("FLEETI_MAX_QUERY_ROWS", "100000"))
 def print(*args: Any, **kwargs: Any) -> None:
     logger.debug(" ".join(str(arg) for arg in args))
 
-# Collections that carry sub_tenant_id directly on their documents.
+# Collections that carry the tenant id directly on their documents.
 _TENANT_AWARE_COLLECTIONS = frozenset({
     "AlertHistory", "AlertRule", "Asset", "AssetGroup", "AvlRecord",
-    "AvlRecordLatest", "Device", "Driver", "Geofence",
+    "AvlRecordLatest", "AvlRecordLatestFields", "Device", "Driver", "Geofence",
+    "Sim", "SubTenant", "SystemAlertRule", "WaslCompany", "WaslDriver", "WaslVehicle",
+})
+
+# Field that holds the tenant id, when it is not sub_tenant_id. SubTenant IS the
+# tenant: its sub_account_id equals every other collection's sub_tenant_id.
+_TENANT_FIELD = {"SubTenant": "sub_account_id"}
+
+# Every collection the agent may read (as the starting collection or via $lookup).
+# Anything else is refused. Collections not in _TENANT_AWARE_COLLECTIONS or
+# _GLOBAL_COLLECTIONS must be reached through a tenant-aware join.
+_ALLOWED_COLLECTIONS = _TENANT_AWARE_COLLECTIONS | frozenset({
+    "ColdChainRecord", "ColdChainRecordLatest", "DailyAnalytics", "DeviceModel",
+    "DeviceType", "FuelDrain", "FuelRefill", "Trip",
+    "WaslPacket", "WaslPacketLatest",
+})
+
+# Global reference catalogs with no tenant data: readable without a tenant scope.
+_GLOBAL_COLLECTIONS = frozenset({"DeviceModel"})
+
+# Private fields: the agent may not reference them in a query, and they are
+# stripped from results whenever the query touches the owning collection.
+# A customer sees all of its OWN data (the tenant filter keeps other customers out),
+# except login credentials, the internal account id and drivers' health details.
+_PRIVATE_FIELDS: Dict[str, frozenset] = {
+    "SubTenant": frozenset({"password", "username", "sub_account_id"}),
+    "Driver": frozenset({"blood_type", "allergies", "medications", "medicial_certification"}),
+}
+
+# Write stages and server-side JavaScript are never allowed. $unionWith and
+# $graphLookup are refused because the tenant filter cannot be enforced on them.
+_FORBIDDEN_OPERATORS = frozenset({
+    "$out", "$merge", "$function", "$accumulator", "$where", "$unionWith", "$graphLookup",
 })
 
 # ---------------------------
@@ -591,61 +623,79 @@ def _strip_sub_tenant_match_from_payload(op: str, payload: MongoPayload) -> Mong
     return payload
 
 
+def _tenant_field(coll: str) -> str:
+    return _TENANT_FIELD.get(coll, "sub_tenant_id")
+
+
 def _inject_sub_tenant_into_lookup_pipeline(
-    sub_pipeline: List[Dict[str, Any]], tenant_value: str
+    sub_pipeline: List[Dict[str, Any]], tenant_value: str, field: str = "sub_tenant_id"
 ) -> List[Dict[str, Any]]:
     """
-    Ensure sub_tenant_id is present in the first $match of a $lookup sub-pipeline.
-    Injects at the head of the first $match body if absent; prepends a new $match if
-    no $match stage exists at all.
+    Force the tenant filter into the first $match of a $lookup sub-pipeline (prepend a
+    $match if there is none). The server value always wins over any tenant value the
+    model wrote itself, so a model-written filter can never widen the scope.
     """
     for i, stage in enumerate(sub_pipeline):
         if isinstance(stage, dict) and isinstance(stage.get("$match"), dict):
-            match_filter = stage["$match"]
-            if not any(_is_sub_tenant_filter_key(k) for k in match_filter):
-                new_filter: Dict[str, Any] = {"sub_tenant_id": tenant_value}
-                new_filter.update(match_filter)
-                result = list(sub_pipeline)
-                result[i] = {"$match": new_filter}
-                return result
-            return list(sub_pipeline)  # already filtered
-    return [{"$match": {"sub_tenant_id": tenant_value}}] + list(sub_pipeline)
+            result = list(sub_pipeline)
+            result[i] = {"$match": {**stage["$match"], field: tenant_value}}
+            return result
+    return [{"$match": {field: tenant_value}}] + list(sub_pipeline)
+
+
+def _lookup_is_correlated(lookup: Dict[str, Any]) -> bool:
+    """True when a $lookup joins on the outer document (localField or let variables)."""
+    return bool(lookup.get("localField")) or bool(lookup.get("let"))
 
 
 def _inject_sub_tenant_to_payload(
     op: str, payload: MongoPayload, tenant_value: str
 ) -> MongoPayload:
     """
-    For each $lookup stage in an aggregate pipeline that references a tenant-aware
-    collection, inject the sub_tenant_id filter into the $lookup sub-pipeline.
+    For each $lookup (at any depth, including inside $lookup sub-pipelines and $facet)
+    that references a tenant-aware collection, force the tenant filter into the
+    $lookup sub-pipeline.
 
     - Pipeline-form $lookup (has 'pipeline' key): inject into first $match or prepend.
     - Simple-form $lookup (no 'pipeline'): convert to pipeline form that replicates the
-      equality join via $expr and adds the sub_tenant_id filter.
-
-    This complements the string-level guardrail in api.py which handles the starting
-    collection's own first $match.
+      equality join via $expr and adds the tenant filter.
+    - $lookup into a collection with no tenant field must be correlated to the outer
+      (already tenant-scoped) document, otherwise it would pull every tenant's rows.
     """
     if op != "aggregate" or not isinstance(payload, list):
         return payload
 
     result = []
     for stage in payload:
+        if isinstance(stage, dict) and isinstance(stage.get("$facet"), dict):
+            result.append({"$facet": {
+                name: _inject_sub_tenant_to_payload("aggregate", sub, tenant_value)
+                for name, sub in stage["$facet"].items()
+            }})
+            continue
         if not isinstance(stage, dict) or not isinstance(stage.get("$lookup"), dict):
             result.append(stage)
             continue
 
         lookup = dict(stage["$lookup"])
         from_coll = lookup.get("from", "")
+        if isinstance(lookup.get("pipeline"), list):
+            lookup["pipeline"] = _inject_sub_tenant_to_payload("aggregate", lookup["pipeline"], tenant_value)
 
         if from_coll not in _TENANT_AWARE_COLLECTIONS:
-            result.append(stage)
+            if from_coll not in _GLOBAL_COLLECTIONS and not _lookup_is_correlated(lookup):
+                raise ValueError(
+                    f"$lookup into '{from_coll}' must join on a field of the outer document "
+                    f"(localField/foreignField or let) - it has no tenant field of its own."
+                )
+            result.append({"$lookup": lookup})
             continue
 
-        # This $lookup joins a tenant-aware collection — ensure sub_tenant_id filter.
+        # This $lookup joins a tenant-aware collection — force the tenant filter.
+        field = _tenant_field(from_coll)
         if isinstance(lookup.get("pipeline"), list):
             lookup["pipeline"] = _inject_sub_tenant_into_lookup_pipeline(
-                lookup["pipeline"], tenant_value
+                lookup["pipeline"], tenant_value, field
             )
         else:
             # Simple form: convert to pipeline form preserving the equality join.
@@ -661,7 +711,7 @@ def _inject_sub_tenant_to_payload(
                     {
                         "$match": {
                             "$expr": {"$eq": [f"${foreign_field}", f"$${var_name}"]},
-                            "sub_tenant_id": tenant_value,
+                            field: tenant_value,
                         }
                     }
                 ],
@@ -740,57 +790,55 @@ def _enforce_starting_collection_tenant(
     Object-level analogue of api.py's _enforce_sub_tenant_filter.
 
     Guarantees tenant isolation on the *starting* collection:
-      - Tenant-aware collection: inject sub_tenant_id into the first $match
-        (aggregate) or the filter (find); prepend a $match if none exists.
-      - Non-tenant-aware collection: require a $lookup into a tenant-aware
-        collection (the lookup sub-pipeline filter is injected separately by
-        _inject_sub_tenant_to_payload), else reject.
+      - Tenant-aware collection: force the tenant filter into the first $match
+        (aggregate) or the filter (find); prepend a $match if none exists. The
+        server value always overrides a tenant value written by the model.
+      - Global catalog (e.g. DeviceModel): no tenant data, nothing to enforce.
+      - Other collections: require a $lookup into a tenant-aware collection (its
+        sub-pipeline filter is injected by _inject_sub_tenant_to_payload) and drop
+        every row whose tenant join came back empty, else reject.
 
     Returns (payload, error_message). A non-None error means the caller MUST
     reject the query instead of executing it.
     """
     if coll in _TENANT_AWARE_COLLECTIONS:
+        field = _tenant_field(coll)
         if op == "aggregate" and isinstance(payload, list):
             for i, stage in enumerate(payload):
                 if isinstance(stage, dict) and isinstance(stage.get("$match"), dict):
-                    match_body = stage["$match"]
-                    if any(_is_sub_tenant_filter_key(k) for k in match_body):
-                        return payload, None
-                    new_match: Dict[str, Any] = {"sub_tenant_id": tenant_value}
-                    new_match.update(match_body)
                     new_payload = list(payload)
-                    new_payload[i] = {**stage, "$match": new_match}
+                    new_payload[i] = {**stage, "$match": {**stage["$match"], field: tenant_value}}
                     return new_payload, None
-            return [{"$match": {"sub_tenant_id": tenant_value}}] + list(payload), None
+            return [{"$match": {field: tenant_value}}] + list(payload), None
 
         if op == "find" and isinstance(payload, dict):
             if "filter" in payload:
-                filt = payload.get("filter") or {}
-                if not any(_is_sub_tenant_filter_key(k) for k in filt):
-                    new_filt: Dict[str, Any] = {"sub_tenant_id": tenant_value}
-                    new_filt.update(filt)
-                    payload = {**payload, "filter": new_filt}
-                return payload, None
-            if not any(_is_sub_tenant_filter_key(k) for k in payload):
-                new_filt = {"sub_tenant_id": tenant_value}
-                new_filt.update(payload)
-                return new_filt, None
-            return payload, None
+                return {**payload, "filter": {**(payload.get("filter") or {}), field: tenant_value}}, None
+            return {**payload, field: tenant_value}, None
 
         return payload, (
             f"Query on tenant-aware collection '{coll}' has an unsupported shape; "
             f"refusing to run without sub_tenant_id."
         )
 
-    # Non-tenant-aware starting collection: require a tenant-aware $lookup.
+    if coll in _GLOBAL_COLLECTIONS:
+        return payload, None
+
+    # Non-tenant-aware starting collection: require a tenant-aware $lookup, and keep
+    # only the rows that actually joined to this tenant (inner-join semantics), so
+    # other tenants' rows never pass through with an empty join array.
     if op == "aggregate" and isinstance(payload, list):
-        for stage in payload:
+        for i, stage in enumerate(payload):
             if (
                 isinstance(stage, dict)
                 and isinstance(stage.get("$lookup"), dict)
                 and stage["$lookup"].get("from") in _TENANT_AWARE_COLLECTIONS
+                and stage["$lookup"].get("as")
             ):
-                return payload, None
+                if not _lookup_is_correlated(stage["$lookup"]):
+                    break
+                keep_joined = {"$match": {stage["$lookup"]["as"]: {"$ne": []}}}
+                return list(payload[: i + 1]) + [keep_joined] + list(payload[i + 1:]), None
     return payload, (
         f"Query on '{coll}' has no $lookup into a tenant-aware collection; "
         f"cannot enforce tenant isolation."
@@ -832,6 +880,69 @@ def _active_asset_filter() -> Dict[str, Any]:
         "device_details.imei": {"$exists": True, "$ne": None, "$not": {"$regex": _BLANK_IMEI_REGEX}},
         "expiry_date": {"$exists": True, "$ne": None, "$gt": now},
     }
+
+
+# ---------------------------
+# Safety guards: allowed collections, read-only, private fields.
+# ---------------------------
+
+def _walk(node: Any) -> Iterable[Tuple[Optional[str], Any]]:
+    """Yield (key, value) for every dict entry and (None, item) for every list item, recursively."""
+    if isinstance(node, dict):
+        for k, v in node.items():
+            yield k, v
+            yield from _walk(v)
+    elif isinstance(node, list):
+        for item in node:
+            yield None, item
+            yield from _walk(item)
+
+
+def _collections_in_payload(coll: str, payload: MongoPayload) -> set:
+    """Starting collection plus every collection joined with $lookup (at any depth)."""
+    found = {coll}
+    for key, value in _walk(payload):
+        if key == "$lookup" and isinstance(value, dict) and value.get("from"):
+            found.add(value["from"])
+    return found
+
+
+def _last_segment(path: str) -> str:
+    return path.lstrip("$").rsplit(".", 1)[-1]
+
+
+def _validate_payload(coll: str, payload: MongoPayload) -> set:
+    """
+    Refuse a query that touches a collection outside the allowlist, uses a write stage
+    or server-side JavaScript, or references a private field. Returns the set of
+    collections the query touches.
+    """
+    touched = _collections_in_payload(coll, payload)
+    unknown = sorted(c for c in touched if c not in _ALLOWED_COLLECTIONS)
+    if unknown:
+        raise ValueError(f"Collection(s) not available to the assistant: {', '.join(unknown)}")
+
+    private = frozenset().union(*(_PRIVATE_FIELDS.get(c, frozenset()) for c in touched))
+    for key, value in _walk(payload):
+        if key in _FORBIDDEN_OPERATORS:
+            raise ValueError(f"Operator {key} is not allowed (read-only access).")
+        if not private:
+            continue
+        if isinstance(key, str) and not key.startswith("$") and _last_segment(key) in private:
+            raise ValueError(f"Field '{_last_segment(key)}' is private and cannot be queried.")
+        if isinstance(value, str) and value.startswith("$") and not value.startswith("$$") \
+                and _last_segment(value) in private:
+            raise ValueError(f"Field '{_last_segment(value)}' is private and cannot be queried.")
+    return touched
+
+
+def _strip_private_fields(node: Any, private: frozenset) -> Any:
+    """Remove private keys at any depth (covers $$ROOT and find-without-projection)."""
+    if isinstance(node, list):
+        return [_strip_private_fields(x, private) for x in node]
+    if isinstance(node, dict):
+        return {k: _strip_private_fields(v, private) for k, v in node.items() if k not in private}
+    return node
 
 
 def _inject_active_into_asset_lookup(lookup: Dict[str, Any]) -> Dict[str, Any]:
@@ -1034,6 +1145,11 @@ class LlmMongoRunner:
             if op not in ("aggregate", "find"):
                 raise ValueError(f"Unsupported operation: {op}")
 
+            # Allowlist, read-only and private-field checks run on the model's own
+            # payload, before the server adds anything (e.g. SubTenant's sub_account_id).
+            touched = _validate_payload(coll, payload)
+            private = frozenset().union(*(_PRIVATE_FIELDS.get(c, frozenset()) for c in touched))
+
             if user_time_zone:
                 user_tz = _parse_user_utc_offset(user_time_zone)
                 payload = _apply_user_timezone_to_payload(payload, user_tz)
@@ -1056,7 +1172,8 @@ class LlmMongoRunner:
                 payload = _inject_sub_tenant_to_payload(op, payload, sub_tenant_id)
 
             effective_limit = _MAX_QUERY_ROWS if (not limit or limit <= 0) else min(limit, _MAX_QUERY_ROWS)
-            return self._execute(coll, op, payload, effective_limit)
+            rows = self._execute(coll, op, payload, effective_limit)
+            return _strip_private_fields(rows, private) if private else rows
         except Exception as e:
             error_msg = f"Error executing MongoDB payload: {str(e)}\n"
             error_msg += f"Collection={coll} op={op}"

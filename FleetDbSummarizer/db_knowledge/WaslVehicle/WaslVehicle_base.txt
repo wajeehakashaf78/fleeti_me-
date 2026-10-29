@@ -1,0 +1,13 @@
+Collection: WaslVehicle
+Fields:
+- _id: uuid
+- plate_no: string
+- vehicle_name: string
+- imei_no: string
+- wasl_asset_key: null|string (null = registration did not succeed)
+- activity: string
+- reply: string (Success | Failed)
+- response: string
+- status: string (Active | Inactive)
+- sub_tenant_id: string
+- created_at: BSON Date

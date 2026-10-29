@@ -1,0 +1,19 @@
+Collection: FuelRefill
+Fields:
+- _id: uuid
+- imei: string
+- initial_ts: BSON Date (refill start time - use for date filters)
+- trigger_ts: BSON Date
+- stop_ts: BSON Date
+- duration_s: float (seconds)
+- initial_fuel: float
+- final_fuel: float
+- refill_litres: float (litres added)
+- min_speed: int
+- gate1_pass: bool (detection quality check)
+- gate2_pass: bool
+- gate3_pass: bool
+- created_at: BSON Date
+- gate1_threshold: float
+- hold: float
+- median: float

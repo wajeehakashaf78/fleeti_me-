@@ -1,0 +1,25 @@
+Collection: Device
+Purpose: Tracker hardware installed on a vehicle: IMEI, model/type, SIM, firmware, cached WASL keys.
+Use for: IMEI inventory, which vehicle a device is on, firmware/protocols, WASL keys, SIM link.
+Do not confuse with: Not GPS packets (AvlRecord*). Not the catalog of models/types (DeviceModel / DeviceType).
+Tenant field: yes (sub_tenant_id)
+IDs: imei (unique, ->Asset.device_details.imei); asset_id (->Asset._id); device_model_id (->DeviceModel.model, holds the model NAME); device_type_id (->DeviceType._id); sim_id (->Sim._id)
+Default sections: Device_base
+Enums:
+- wasl.asset_activity: DEFAULT | SPECIALITY_TRANSPORT | MOTORCYCLE_DELIVERY | TOW_CAR
+- data_protocol: codec8 | VL103D | aTelematics
+- status: Active
+Notes:
+- Links out: asset_id -> Asset._id, device_model_id -> DeviceModel.model (a model NAME such as FMB920, not an id), device_type_id -> DeviceType._id, sim_id -> Sim._id.
+- WASL: a vehicle IS registered on WASL when wasl.asset_wasl_key is non-empty (~16k devices).
+- imei is unique across Device.
+Sections:
+- Device_base: imei, serial, model, manufacturer, SIM, install/warranty, wasl.* keys
+Indexes:
+- sub_tenant_id + asset_id
+- sub_tenant_id + imei + asset_id
+- sub_tenant_id
+- wasl.company_wasl_key + wasl.asset_wasl_key
+- container_group_id
+- sub_tenant_id + imei
+- imei (unique)

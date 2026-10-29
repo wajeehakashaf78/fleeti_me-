@@ -125,6 +125,8 @@ SESSION_HISTORY_CACHE_TTL_SECONDS = int(os.getenv("SESSION_HISTORY_CACHE_TTL_SEC
 # After this many turns on one OpenAI conversation, reset to a fresh EMPTY conversation
 # (clears context to keep per-turn cost bounded). No history is re-injected.
 CONVERSATION_TURN_LIMIT = int(os.getenv("FLEETI_CONVERSATION_TURN_LIMIT", "10"))
+# How many recent exchanges to recap into a new conversation (0 = start empty).
+CARRYOVER_TURNS = int(os.getenv("FLEETI_CARRYOVER_TURNS", "3"))
 # Reuse the agent logger so reset events land in both terminal and the log file.
 agent_logger = logging.getLogger("FleetiAgent.agent")
 _SessionCacheKey = Tuple[str, str, str]
@@ -262,12 +264,25 @@ def _user_friendly_failure_message() -> str:
 def _create_conversation(
     history_saver: FleetiHistorySaver,
     session_cache_key: _SessionCacheKey,
+    session_doc: Optional[Dict[str, Any]] = None,
 ) -> str:
     """
-    Create a fresh, EMPTY OpenAI Conversation (no prior history injected) and persist its
-    id on the session doc + cache (resetting the turn counter). Return the id.
+    Create a fresh OpenAI Conversation and persist its id on the session doc + cache
+    (resetting the turn counter). Return the id.
+
+    When the session already has messages (10-turn reset, or the old conversation went
+    missing), the new conversation starts with a short recap of the last few exchanges
+    instead of being empty, so follow-up questions still make sense.
     """
-    conv = fleeti_agent.client.conversations.create()
+    note = history_saver.build_carryover_note(session_doc, turns=CARRYOVER_TURNS) if CARRYOVER_TURNS else None
+    conv = None
+    if note:
+        try:
+            conv = fleeti_agent.client.conversations.create(items=[{"role": "developer", "content": note}])
+        except Exception as exc:  # noqa: BLE001 - never block the chat on the recap
+            agent_logger.warning("could not seed recap into new conversation: %s", exc)
+    if conv is None:
+        conv = fleeti_agent.client.conversations.create()
     history_saver.set_conversation_id(conv.id)
     _set_cached_conversation_id(session_cache_key, conv.id)
     return conv.id
@@ -331,6 +346,15 @@ async def _on_startup() -> None:
             await asyncio.sleep(1800)  # every 30 minutes
 
     asyncio.create_task(_cleaner())
+
+    # Load the RAG embedding model + reranker in the background so the first question is not slow.
+    async def _warm_rag() -> None:
+        from FleetDbSummarizer import rag
+
+        if await asyncio.to_thread(rag.available):
+            await asyncio.to_thread(rag.warm_up)
+
+    asyncio.create_task(_warm_rag())
 
 
 @app.get("/downloads/{filename}")
@@ -421,20 +445,20 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(defau
             return ChatResponse(human_response=_user_friendly_failure_message(), error=False)
 
         # Cross-turn memory lives in an OpenAI Conversation; we only send the new message.
-        # Every CONVERSATION_TURN_LIMIT turns we reset to a fresh EMPTY conversation to keep
-        # per-turn cost bounded (no history is carried over).
+        # Every CONVERSATION_TURN_LIMIT turns we start a fresh conversation to keep per-turn
+        # cost bounded; it is seeded with a short recap of the last CARRYOVER_TURNS exchanges.
         conversation_id = history_saver.get_conversation_id(session_doc)
         turn_count = int((session_doc or {}).get("conversation_turn_count", 0) or 0)
 
         if conversation_id and turn_count >= CONVERSATION_TURN_LIMIT:
             agent_logger.info(
-                "♻ context reset after %d turns | session=%s (starting a fresh conversation)",
-                turn_count, request.session_id,
+                "♻ context reset after %d turns | session=%s (fresh conversation + recap of %d turns)",
+                turn_count, request.session_id, CARRYOVER_TURNS,
             )
-            conversation_id = _create_conversation(history_saver, session_cache_key)
+            conversation_id = _create_conversation(history_saver, session_cache_key, session_doc)
             turn_count = 0
         elif not conversation_id:
-            conversation_id = _create_conversation(history_saver, session_cache_key)
+            conversation_id = _create_conversation(history_saver, session_cache_key, session_doc)
             turn_count = 0
 
         remove_sub_tenant_match = should_remove_sub_tenant_match(
@@ -442,7 +466,7 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(defau
             base_url=request.base_url,
         )
 
-        async def _run(conv_id: str):
+        async def _run(conv_id: str, turn_index: int):
             return await fleeti_agent.run(
                 request.user_input,
                 conversation_id=conv_id,
@@ -452,14 +476,15 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(defau
                 authorization=authorization,
                 time_zone=request.time_zone,
                 remove_sub_tenant_match=remove_sub_tenant_match,
+                turn_index=turn_index,
             )
 
-        result = await _run(conversation_id)
+        result = await _run(conversation_id, turn_count)
         if result.conversation_invalid:
-            # Conversation missing/expired on OpenAI -> start a fresh empty one, retry once.
-            conversation_id = _create_conversation(history_saver, session_cache_key)
+            # Conversation missing/expired on OpenAI -> start a fresh one (with recap), retry once.
+            conversation_id = _create_conversation(history_saver, session_cache_key, session_doc)
             turn_count = 0
-            result = await _run(conversation_id)
+            result = await _run(conversation_id, turn_count)
 
         # Record this turn against the current conversation (drives the 10-turn reset).
         turn_count += 1

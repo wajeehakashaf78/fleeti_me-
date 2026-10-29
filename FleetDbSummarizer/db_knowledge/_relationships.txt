@@ -1,0 +1,71 @@
+# FMS relationships - one join per line.
+# Format: From | To | Join | Cardinality | Meaning
+# Lines starting with # are comments. Order of From/To does not matter for lookup.
+# Join keys verified against the live fms DB on 2026-10-18 (sampled value matches).
+
+# --- Asset (vehicle hub) ---
+Asset | Device | Device.imei = Asset.device_details.imei (or Device.asset_id = Asset._id) | 1:1 | tracker installed on the vehicle
+Asset | Driver | Driver.asset_assignments._id = Asset._id | many:many | who drives which vehicle (use the latest assignment)
+Asset | AvlRecord | AvlRecord.device_context.asset_id = Asset._id (or AvlRecord.imei = Asset.device_details.imei) | 1:many | GPS history
+Asset | AvlRecordLatest | AvlRecordLatest.device_context.asset_id = Asset._id | 1:0..n (usually 1) | current packet, one per DEVICE (~300 vehicles have 2+ after a device swap)
+Asset | AvlRecordLatestFields | AvlRecordLatestFields.imei = Asset.device_details.imei (or device_context.asset_id = Asset._id) | 1:0..1 | current sensor/IO values
+Asset | Trip | Trip.driver_info.asset_id = Asset._id (also Trip.imei = Asset.device_details.imei) | 1:many | journeys
+Asset | DailyAnalytics | DailyAnalytics.asset_id = Asset._id | 1:many | per-day totals (the day field is `date`)
+Asset | AlertHistory | AlertHistory.asset_info._id = Asset._id | 1:many | alert/event logs
+Asset | AlertRule | AlertRule.assigned_assets.asset_id = Asset._id | many:many | rules watching the vehicle
+Asset | AssetGroup | AssetGroup.assigned_assets.asset_id = Asset._id (also Asset.device_details.group_id = AssetGroup._id) | many:many | group membership
+Asset | Geofence | Geofence.asset_assignments.asset_id = Asset._id | many:many | zones assigned to the vehicle
+Asset | Sim | via Device: Device.asset_id = Asset._id, then Sim._id = Device.sim_id (Sim.asset_id is almost always empty) | 1:0..1 | SIM in the vehicle's tracker
+Asset | FuelRefill | FuelRefill.imei = Asset.device_details.imei | 1:many | fuel fill events
+Asset | FuelDrain | FuelDrain.imei = Asset.device_details.imei | 1:many | fuel drop / theft events
+Asset | ColdChainRecord | ColdChainRecord.imei = Asset.device_details.imei | 1:many | temperature history
+Asset | ColdChainRecordLatest | ColdChainRecordLatest.imei = Asset.device_details.imei | 1:0..1 | current temperature
+Asset | WaslVehicle | WaslVehicle.imei_no = Asset.device_details.imei | 1:many | FAILED WASL registration attempts (registered = Device.wasl.asset_wasl_key set)
+Asset | WaslPacket | WaslPacket.imei = Asset.device_details.imei | 1:many | WASL push log
+Asset | WaslPacketLatest | WaslPacketLatest.imei = Asset.device_details.imei | 1:0..1 | last WASL push
+
+# --- Driver ---
+Driver | Trip | Trip.driver_info.driver_info.id = Driver._id | 1:many | driver journeys
+Driver | AvlRecord | AvlRecord.device_context.driver_info.id = Driver._id | 1:many | packets while assigned
+Driver | DailyAnalytics | DailyAnalytics.driver_id = Driver._id | 1:many | per-day driver totals
+Driver | WaslDriver | WaslDriver.driver_id = Driver._id | 1:many | FAILED WASL driver registration attempts (registered = Driver.wasl_logs.wasl_driver_key set)
+
+# --- Device (hardware hub, joins on imei) ---
+Device | DeviceModel | Device.device_model_id = DeviceModel.model (device_model_id stores the model NAME, e.g. FMB920 - NOT DeviceModel._id) | many:1 | hardware model
+Device | DeviceType | Device.device_type_id = DeviceType._id | many:1 | device type / features
+Device | Sim | Device.sim_id = Sim._id (and Sim.device_id = Device._id - NOT Device.device_id) | 1:0..1 | SIM in the tracker
+Device | AvlRecord | AvlRecord.imei = Device.imei (also AvlRecord.device_id = Device.device_id) | 1:many | telemetry from the unit
+Device | AvlRecordLatest | AvlRecordLatest.imei = Device.imei | 1:0..1 | current packet
+Device | AvlRecordLatestFields | AvlRecordLatestFields.imei = Device.imei | 1:0..1 | current sensor/IO values
+Device | Trip | Trip.imei = Device.imei | 1:many | trips of the tracker
+Device | FuelRefill | FuelRefill.imei = Device.imei | 1:many | fuel fill events
+Device | FuelDrain | FuelDrain.imei = Device.imei | 1:many | fuel drop events
+Device | ColdChainRecord | ColdChainRecord.imei = Device.imei | 1:many | temperature history
+Device | ColdChainRecordLatest | ColdChainRecordLatest.imei = Device.imei | 1:0..1 | current temperature
+Device | WaslCompany | Device.wasl.company_wasl_key = WaslCompany.wasl_key | many:1 | cached company WASL key
+Device | WaslVehicle | WaslVehicle.imei_no = Device.imei | 1:many | FAILED vehicle WASL registration attempts (success lives in Device.wasl.asset_wasl_key)
+Device | WaslPacket | WaslPacket.imei = Device.imei | 1:many | WASL push log
+Device | WaslPacketLatest | WaslPacketLatest.imei = Device.imei | 1:0..1 | last WASL push
+
+# --- Telemetry ---
+AvlRecord | AvlRecordLatest | same imei - AvlRecordLatest is a copy of the newest AvlRecord | many:1 | history vs now
+AvlRecordLatest | AvlRecordLatestFields | same imei | 1:1 | nested latest vs flat latest fields
+AvlRecord | AlertHistory | AlertHistory.alert_info.avl_packet_id = AvlRecord._id | 1:0..many | packet that raised the alert
+AvlRecord | WaslPacket | WaslPacket.avl_record_id = AvlRecord._id | 1:0..many | GPS packet pushed to WASL
+Trip | AvlRecord | same imei AND AvlRecord.timestamp between Trip.start_at and Trip.end_at | 1:many | trip breadcrumbs
+ColdChainRecord | ColdChainRecordLatest | same imei | many:1 | history vs now
+
+# --- Definitions ---
+AlertRule | AlertHistory | AlertHistory.alert_info.alert_rule_id = AlertRule._id | 1:many | triggers of the rule
+AlertRule | AssetGroup | AlertRule.assigned_asset_groups.group_id = AssetGroup._id | many:many | groups watched by the rule
+Geofence | AssetGroup | Geofence.asset_group_assignments.group_id = AssetGroup._id | many:many | groups assigned to the zone
+
+# --- WASL ---
+WaslCompany | WaslVehicle | same sub_tenant_id (vehicles registered under the company) | 1:many | company -> vehicles
+WaslCompany | WaslDriver | same sub_tenant_id (drivers registered under the company) | 1:many | company -> drivers
+WaslPacket | WaslPacketLatest | same imei | many:1 | push history vs last push
+WaslPacket | WaslVehicle | WaslPacket.wasl_location_data.vehicle_location.reference_key = WaslVehicle.wasl_asset_key | many:1 | packet names the registered vehicle
+WaslPacket | WaslDriver | WaslPacket.wasl_location_data.vehicle_location.driver_reference_key = driver WASL key (Device.wasl.driver_wasl_key) | many:1 | packet names the registered driver
+
+# --- Tenant ---
+SubTenant | * | <collection>.sub_tenant_id = SubTenant.sub_account_id (NOT SubTenant._id; the server applies this - never add it yourself) | 1:many | account isolation

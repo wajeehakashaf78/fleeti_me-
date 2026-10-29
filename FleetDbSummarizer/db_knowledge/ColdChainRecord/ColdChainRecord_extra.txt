@@ -1,0 +1,3 @@
+Collection: ColdChainRecord
+Fields:
+- updated_at: BSON Date (when the record was last changed)

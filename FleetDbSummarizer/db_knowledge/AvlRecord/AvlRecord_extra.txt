@@ -1,0 +1,17 @@
+Collection: AvlRecord
+Fields:
+- HDOP: string (GPS accuracy (lower = more accurate))
+- alarm_status: object (alarm flags reported by the device)
+- antenna_status: string (GPS antenna state)
+- applied_alerts: array (alert rules evaluated / triggered on this packet)
+- behaviour: object (driving-behaviour events detected in this packet (harsh braking, cornering, ...))
+- created_at: BSON Date (when the record was created)
+- device_state: object (device state flags)
+- geofencealert: array (geofence enter / exit events of this packet)
+- load_sensor_voltage: string (load / weight sensor voltage)
+- mileage: string (mileage reported by the device)
+- mileage_unit: string (unit of mileage)
+- power_status: string (external power state of the device)
+- updated_at: BSON Date (when the record was last changed)
+- movement_distance_o: float (distance of the movement from the odometer)
+- movement_end_time: BSON Date (when the movement ended)

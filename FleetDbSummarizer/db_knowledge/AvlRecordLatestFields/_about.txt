@@ -1,0 +1,17 @@
+Collection: AvlRecordLatestFields
+Purpose: Current IO/sensor values per IMEI, flattened (BLE temp/humidity/battery, voltage, fuel %, door).
+Use for: Current sensor/IO values without digging nested AvlRecordLatest structure.
+Do not confuse with: Not a full trip history; companion to AvlRecordLatest keyed by imei.
+Tenant field: yes (sub_tenant_id)
+IDs: imei (unique); device_context.asset_id (->Asset._id)
+Default sections: AvlRecordLatestFields_base
+Notes:
+- Values are strings - convert with $toDouble before comparing numbers.
+- Unique index on imei. Companion snapshot of latest IO/sensor fields.
+Sections:
+- AvlRecordLatestFields_base: timestamp, speed, ignition, battery, voltage, fuel %, door, temperature
+- AvlRecordLatestFields_ble: BLE sensor slots 1-10: temperature, humidity, battery
+- AvlRecordLatestFields_raw: raw / processing fields of the packet (debugging; large values)
+- AvlRecordLatestFields_extra: other fields (audit: created/updated by/at, and less common fields)
+Indexes:
+- imei (unique)

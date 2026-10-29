@@ -1,0 +1,57 @@
+FMS DATABASE - OVERVIEW
+Database: fms. One folder per collection: _about.txt (what it is) + one .txt per field section.
+This file and _relationships.txt are hand-written. Edit these files, not Python, to change DB knowledge.
+
+MENTAL MODEL
+1. SubTenant = the customer account. Other collections point to it with sub_tenant_id (= SubTenant.sub_account_id).
+2. Asset = the vehicle (the hub - most questions start here, by plate details.plate_number).
+3. Device = the GPS tracker on the vehicle; Sim = the SIM in the tracker;
+   DeviceModel / DeviceType = what kind of hardware the Device is.
+4. IMEI is the hardware hub: telemetry, trips, fuel, cold-chain and WASL all hang off imei.
+5. Driver = person assigned to vehicles (Driver.asset_assignments).
+6. Telemetry: AvlRecord = history (~5.5 billion rows - always filter by vehicle AND time), AvlRecordLatest = current packet
+   (one per DEVICE), AvlRecordLatestFields = current flat sensor values.
+7. Trip = one journey; DailyAnalytics = one day per asset/driver.
+8. AlertHistory = every alert/event LOG. AlertRule / SystemAlertRule / Geofence = DEFINITIONS only.
+9. AssetGroup = named groups of vehicles.
+10. FuelRefill / FuelDrain = fuel sensor events by imei.
+11. ColdChainRecord / ColdChainRecordLatest = temperature/humidity probes (history / current).
+12. Wasl* = Saudi WASL compliance: WaslCompany = company registration; WaslVehicle / WaslDriver = FAILED registration
+    attempts only (successful keys live on Device.wasl.* and Driver.wasl_logs); WaslPacket = each GPS push (~3.3 billion rows),
+    WaslPacketLatest = last push per imei.
+
+DISAMBIGUATIONS
+- Latest/current telemetry (location/speed/ignition/movement) -> AvlRecordLatest (one latest doc per device). Historical / at-a-past-time telemetry -> AvlRecord.
+- Per-day aggregates live in DailyAnalytics and the day is the field `date` (not timestamp).
+- Current sensor/IO value (BLE temperature, battery, voltage, fuel %, door) -> AvlRecordLatestFields. Sensor history -> AvlRecord (AvlRecord_sensor).
+- ALL alert & event LOGS live in AlertHistory. Filter by alert_info.type:
+  * 'systemAlert' = driving-behavior/system events (Idling, Harsh Acceleration/Braking/Cornering, Sharp Turn, Sudden Stop, Over Speeding, Zigzag, Frequent Start/Stop, Long Continuous Driving, Driving Without GPS, low-battery driving) - the event name is in alert_info.alert_message.
+  * 'alertRule' = user-defined AlertRule triggers.
+  * 'geofencealert' = geofence entry/exit events.
+- DEFINITIONS (not logs) live separately: user rules -> AlertRule; system event thresholds -> SystemAlertRule; geofence zones -> Geofence.
+- AlertHistory links to the asset via asset_info._id (-> Asset._id) and to the rule via alert_info.alert_rule_id (-> AlertRule._id).
+- AssetGroup = named sets of assets; link AssetGroup.assigned_assets[].asset_id -> Asset._id.
+- Driver of a vehicle -> Driver.asset_assignments (use the latest assignment).
+- Per-day aggregates -> DailyAnalytics; per-trip -> Trip; overall/all-time driver KPIs -> Driver analytics.
+- Fuel refills -> FuelRefill; fuel drops / possible theft -> FuelDrain; continuous fuel level -> AvlRecord sensors.
+- Fridge / cold-box temperature: now -> ColdChainRecordLatest; history -> ColdChainRecord.
+- WASL: is a vehicle registered? -> Device.wasl.asset_wasl_key non-empty. Why did registration fail? -> WaslVehicle / WaslDriver (failed attempts only). Company registration -> WaslCompany. What was pushed -> WaslPacket; last push time -> WaslPacketLatest. WaslPacket is NOT Fleeti's GPS source of truth (use AvlRecord).
+
+COMMON PATHS
+- Plate -> current location: Asset (details.plate_number) -> AvlRecordLatest (device_context.asset_id = Asset._id, is_processed: true).
+- Plate -> trips in a range: Asset -> Trip (driver_info.asset_id = Asset._id) + start_at range.
+- Driver -> vehicles: Driver (profile.first_name + profile.last_name) -> asset_assignments[]._id -> Asset._id.
+- Vehicle -> SIM / model / type: Asset -> Device (Device.asset_id = Asset._id) -> Sim (Sim._id = Device.sim_id) / DeviceModel (DeviceModel.model = Device.device_model_id) / DeviceType (DeviceType._id = Device.device_type_id).
+- Vehicle -> fuel events: Asset -> device_details.imei -> FuelRefill (initial_ts) / FuelDrain (start_ts).
+- Vehicle -> cold chain: Asset -> device_details.imei -> ColdChainRecordLatest (now) / ColdChainRecord (history by timestamp).
+- Geofence -> vehicles: Geofence (name) -> asset_assignments[].asset_id -> Asset._id.
+- Vehicle -> WASL: Asset -> Device (wasl.asset_wasl_key = registered) -> WaslPacketLatest (last push, by imei) -> WaslPacket (history, by imei + created_at). Failure reason: WaslVehicle by imei_no.
+
+TENANT SCOPE (enforced by the server in FleetiQueryRunner/execute.py - never add sub_tenant_id yourself)
+- Filtered directly on sub_tenant_id: Asset, Driver, Device, Sim, AvlRecord, AvlRecordLatest, AvlRecordLatestFields,
+  Geofence, AssetGroup, AlertHistory, AlertRule, SystemAlertRule, WaslCompany, WaslVehicle, WaslDriver.
+- SubTenant: filtered on sub_account_id, so only the user's own account row is ever returned.
+- Global catalog (no tenant data): DeviceModel.
+- Everything else (Trip, DailyAnalytics, DeviceType, FuelRefill, FuelDrain, ColdChainRecord, ColdChainRecordLatest,
+  WaslPacket, WaslPacketLatest) must be reached through a correlated $lookup to one of the
+  tenant-filtered collections; rows that do not join are dropped.

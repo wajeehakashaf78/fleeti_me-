@@ -1,0 +1,40 @@
+Collection: ColdChainRecord
+Fields:
+- _id: uuid
+- imei: string
+- device_id: string
+- timestamp: BSON Date (indexed time field)
+- probe_temperature: number (degrees C)
+- probe_humidity: number (%)
+- probe_number: number
+- alarm_status: number
+- location: { type: "Point", coordinates: [latitude, longitude] }  (index 0 = LATITUDE, index 1 = LONGITUDE)
+- telemetry_context.zone_id: string
+- telemetry_context.zone_name: string
+- sub_tenant_id: string
+- is_processed: bool
+- altitude: float
+- applied_alerts: array
+- created_at: BSON Date
+- data_protocol: string
+- device_model_id: string
+- device_status: object
+- direction_angle: float
+- gps_status: string
+- group_id: string
+- gsm_signal: string
+- ignition_status: string
+- is_unprocessed: bool
+- manufacturer: string
+- model: string
+- packet_type: string
+- processed_at: int
+- received_on: BSON Date
+- satellites: int
+- speed: float
+- battery_level: string
+- alarm_status.temperature_over_limit: string
+- alarm_status.temperature_under_limit: string
+- alarm_status.humidity_over_limit: string
+- alarm_status.humidity_under_limit: string
+- alarm_status.battery_warning: string

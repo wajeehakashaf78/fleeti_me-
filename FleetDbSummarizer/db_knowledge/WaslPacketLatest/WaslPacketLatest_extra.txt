@@ -1,0 +1,3 @@
+Collection: WaslPacketLatest
+Fields:
+- tenant: string (host / account label string - NOT the tenant filter (that is sub_tenant_id, applied by the server))

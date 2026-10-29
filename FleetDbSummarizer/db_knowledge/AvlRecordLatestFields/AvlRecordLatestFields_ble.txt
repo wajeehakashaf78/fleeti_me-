@@ -1,0 +1,7 @@
+Collection: AvlRecordLatestFields
+Fields:
+- ble_temperature_<n>: string (n = 1..10, degrees C - convert with $toDouble)
+- ble_humidity_<n>: string (n = 1..10, % - convert with $toDouble)
+- ble_battery_<n>: string (n = 1..10 - convert with $toDouble)
+- imei: string
+- timestamp: BSON Date

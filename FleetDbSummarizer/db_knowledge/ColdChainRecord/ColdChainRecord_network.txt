@@ -1,0 +1,14 @@
+Collection: ColdChainRecord
+Fields:
+- key_4g_cid: string (4G cell id)
+- key_4g_lac: string (4G location area code)
+- key_4g_mcc: string (4G mobile country code)
+- key_4g_mnc: string (4G mobile network (operator) code)
+- key_4g_switch: string (4G on / off)
+- upload_interval: int (seconds between uploads)
+- wifi_dhcp_enabled: string (Wi-Fi DHCP on / off)
+- wifi_mac_address: string (Wi-Fi MAC address)
+- wifi_signal_strength: int (Wi-Fi signal strength)
+- wifi_ssid: string (Wi-Fi network name)
+- wifi_status: string (Wi-Fi connection status)
+- wifi_switch: string (Wi-Fi on / off)

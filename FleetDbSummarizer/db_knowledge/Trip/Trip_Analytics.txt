@@ -1,0 +1,18 @@
+Collection: Trip
+Fields:
+- harsh_braking_occurrence: int
+- harsh_acceleration_occurrence: int
+- harsh_cornering_occurrence: int
+- over_speeding_occurrence: int
+- idling_occurrence: int
+- zigzagging_occurrence: int
+- crashing_count: int
+- sudden_stop_count: int
+- sharp_turn_count: int
+- frequent_start_stop_count: int
+- fuel_consumed_ltrs: int
+- fuel_refill_count: int
+- behaviour_score: int
+- safety_score: int
+- packet_info.movement: int
+- packet_info.idling: int

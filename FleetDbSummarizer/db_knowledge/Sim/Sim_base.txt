@@ -1,0 +1,24 @@
+Collection: Sim
+Fields:
+- _id: uuid
+- sim_id: string
+- iccid: string
+- msisdn: string
+- imsi: string
+- status: int (int code)
+- device_id: string (links to Device._id)
+- device_name: string
+- asset_id: string (mostly empty - use Device.asset_id)
+- carrier: int
+- service_provider: int
+- sub_tenant_id: string
+- created_at: BSON Date
+- last_deactivated_at: BSON Date
+- serial_no: string
+- sim_no: string
+- Plan: string (plan name)
+- plan.limit: int (data limit)
+- plan.total_used: int
+- plan.current_month: int
+- Activation.activated_at: BSON Date
+- Activation.expires_at: BSON Date

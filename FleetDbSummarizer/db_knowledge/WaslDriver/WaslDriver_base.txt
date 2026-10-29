@@ -1,0 +1,11 @@
+Collection: WaslDriver
+Fields:
+- _id: uuid
+- driver_id: string (links to Driver._id)
+- driver_name: string
+- activity: int
+- reply: string (Success | Failed)
+- response: string
+- status: string (Active | Inactive)
+- sub_tenant_id: string
+- created_at: BSON Date

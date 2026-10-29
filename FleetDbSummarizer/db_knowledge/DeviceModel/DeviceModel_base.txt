@@ -1,0 +1,9 @@
+Collection: DeviceModel
+Fields:
+- _id: uuid
+- model: string (<- Device.device_model_id)
+- manufacturer: string
+- data_protocol: string
+- communication_protocol: string
+- command_protocol: string
+- created_at: BSON Date

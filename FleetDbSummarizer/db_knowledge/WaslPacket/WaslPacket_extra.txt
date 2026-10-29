@@ -1,0 +1,4 @@
+Collection: WaslPacket
+Fields:
+- updated_at: BSON Date (when the record was last changed)
+- tenant: string (host / account label string - NOT the tenant filter (that is sub_tenant_id, applied by the server))

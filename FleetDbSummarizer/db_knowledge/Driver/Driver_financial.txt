@@ -1,0 +1,5 @@
+Collection: Driver
+Fields:
+- financial.base_salary: float|null
+- financial.hourly_rate: float|null
+- financial.bonus_eligible: bool
