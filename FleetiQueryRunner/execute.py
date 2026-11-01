@@ -513,7 +513,6 @@ def _replace_date_strings_with_isodate(query_str: str) -> str:
     iso_date_pattern = r'(["\'])(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:?\d{2})?)\1'
     
     def replace_date(match):
-        quote_char = match.group(1)
         date_str = match.group(2)
         # Normalize: if date has space separator, convert to T separator for ISODate
         # Keep timezone as-is (Z, +00:00, -05:00, etc.)

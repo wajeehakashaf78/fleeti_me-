@@ -4,7 +4,7 @@ Defines Pydantic models for request/response validation
 """
 
 from pydantic import BaseModel, Field
-from typing import Optional, List, Dict, Any
+from typing import Optional, List
 
 
 class ChatRequest(BaseModel):
@@ -38,37 +38,3 @@ class LLMResponse(BaseModel):
     type: str = Field(..., description="Report type or 'invalid'")
     pre_req: Optional[PreRequisites] = Field(None, description="Report prerequisites")
     message: str = Field(default="", description="Message to user about missing prerequisites")
-
-
-class AssetInfo(BaseModel):
-    """Asset information from MongoDB"""
-    asset_id: str = Field(..., alias="_id")
-    plate_number: Optional[str] = None
-    
-    class Config:
-        populate_by_name = True
-
-
-class DriverInfo(BaseModel):
-    """Driver information from MongoDB"""
-    driver_id: str
-    driver_name: str
-    assignment_id: Optional[str] = None
-
-
-class APIPayload(BaseModel):
-    """Generic API payload model"""
-    StartDate: Optional[str] = None
-    EndDate: Optional[str] = None
-    AssetIds: Optional[str] = None
-    DriverIds: Optional[str] = None
-    Type: Optional[str] = None
-
-
-class ChatResponse(BaseModel):
-    """Response model for chat endpoint"""
-    status: str = Field(..., description="success or error")
-    llm_response: Optional[LLMResponse] = None
-    mongodb_query_result: Optional[Dict[str, Any]] = None
-    api_response: Optional[Dict[str, Any]] = None
-    error: Optional[str] = None

@@ -6,7 +6,7 @@ Saves and loads conversation history from MongoDB collection FleetiMessages
 import os
 import json
 import logging
-from typing import List, Dict, Any, Optional
+from typing import Dict, Any, Optional
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 from pymongo import MongoClient
@@ -78,39 +78,6 @@ class FleetiHistorySaver:
         except Exception:
             return str(assistant_value)
     
-    def build_conversation_seed_items(
-        self,
-        session_doc: Optional[Dict[str, Any]],
-    ) -> List[Dict[str, str]]:
-        """
-        Build OpenAI Conversation seed items ([{role, content}, ...]) from the stored
-        transcript. Only used to seed a fresh conversation (first turn of a pre-existing
-        session, or recovery after a conversation went missing on OpenAI's side).
-        """
-        if not session_doc:
-            return []
-
-        items: List[Dict[str, str]] = []
-        for msg in session_doc.get("messages", []):
-            if "assistant_static_input" in msg:
-                content = msg.get("assistant_static_input", "")
-                if content:
-                    items.append({"role": "assistant", "content": content})
-                continue
-
-            user_text = (msg.get("user_input") or "").strip()
-            if user_text:
-                items.append({"role": "user", "content": user_text})
-
-            if msg.get("type") == "general":
-                assistant = msg.get("llm_response", "")
-            else:
-                assistant = self._compact_assistant_for_history(msg.get("human_response", ""))
-            if assistant:
-                items.append({"role": "assistant", "content": assistant})
-
-        return items
-
     def build_carryover_note(
         self,
         session_doc: Optional[Dict[str, Any]],
@@ -258,12 +225,3 @@ class FleetiHistorySaver:
             Session document or None if not found
         """
         return self.db[self.collection_name].find_one({"sessionId": self.session_id})
-    
-    def clear_session(self):
-        """Clear all messages for the current session."""
-        self.db[self.collection_name].update_one(
-            {"sessionId": self.session_id},
-            {"$set": {"messages": []}}
-        )
-        logger.debug("Cleared messages for session: %s", self.session_id)
-

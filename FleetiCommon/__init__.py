@@ -9,9 +9,8 @@ to the original definitions.
 """
 
 import re
-import json
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import timezone, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 

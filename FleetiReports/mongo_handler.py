@@ -10,7 +10,6 @@ from datetime import datetime, timezone
 from pymongo import MongoClient
 from pymongo.errors import PyMongoError
 from .config import settings
-from .models import AssetInfo, DriverInfo
 
 logger = logging.getLogger(__name__)
 

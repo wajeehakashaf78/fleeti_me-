@@ -37,12 +37,6 @@ _NORM_SECTION = {_norm(s): s for s in _K.section_fields}
 _NORM_COLLECTION = {_norm(c): c for c in _K.collections}
 _EXAMPLES_BY_KEY = {ex.key: ex for ex in _K.examples}
 
-# Kept for callers that used the old in-Python example bank.
-EXAMPLES: List[Dict[str, Any]] = [
-    {"tags": ex.tags, "collections": ex.collections, "question": ex.question, "query": ex.query}
-    for ex in _K.examples
-]
-
 
 # ================================
 # On-demand rule packs
@@ -154,7 +148,7 @@ RULES = """QUERY RULES:
 - Vehicle STATUS questions — online / reporting / responding, offline, not reporting, not connected, or moving / idle / stopped / parked / illegal movement — have EXACT definitions and time thresholds that you must NOT guess or infer. Call get_query_context with sections ["asset_status_rules"] FIRST; it returns those rules plus the fields, joins and examples you need. This applies to counts and breakdowns too (e.g. "how many vehicles are online"). These states are evaluated over ACTIVE vehicles only.
 - Joins: $lookup only to reach fields in a DIFFERENT collection; never join a collection to itself. Use the localField/foreignField from the get_query_context "joins" output.
 - Projection: always exclude _id ("_id":0) and never project any *_id field; use full paths, e.g. {"plate_number":"$details.plate_number"}.
-- Tenant: do NOT add sub_tenant_id yourself — the server injects it. If the starting collection has no tenant field of its own (Trip, DailyAnalytics, DeviceType, FuelRefill, FuelDrain, ColdChainRecord, ColdChainRecordLatest, WaslPacket, WaslPacketLatest), start from Asset or include a $lookup into a tenant-aware collection (Asset, Device, Driver, ...) joined on a field (localField/foreignField or let) so the server can scope via the join; rows that do not join are dropped. Queries are read-only: $out, $merge, $unionWith, $graphLookup and server-side JavaScript are refused. Private fields (credentials, national ids, personal contacts) are refused too.
+- Tenant: do NOT add sub_tenant_id yourself — the server injects it. If the starting collection has no tenant field of its own (Trip, DailyAnalytics, DeviceType, FuelRefill, FuelDrain, ColdChainRecord, ColdChainRecordLatest, WaslPacket, WaslPacketLatest), start from Asset or include a $lookup into a tenant-aware collection (Asset, Device, Driver, ...) joined on a field (localField/foreignField or let) so the server can scope via the join; rows that do not join are dropped. Queries are read-only: $out, $merge, $unionWith, $graphLookup and server-side JavaScript are refused. Private fields are refused too: login credentials and the internal account id (SubTenant password, username, sub_account_id) and drivers' health details (Driver medical blood_type, allergies, medications, medicial_certification). Everything else of the user's own tenant, including driver/company contacts, identity numbers and salaries, may be queried and shown.
 - Active vehicles only: every Asset access (any vehicle/plate question) is automatically restricted server-side to ACTIVE vehicles. A vehicle is ACTIVE only when ALL of these are true TOGETHER: device_availability is "AssignedToDevice" AND status is "Active" or "Maintenance" (a vehicle under maintenance still counts as active) AND it has a real device IMEI AND it has an expiry_date that is still in the future. Anything else is INACTIVE / EXPIRED SUBSCRIPTION and is excluded — not assigned to a device, any other status (Inactive, Blocked, ...), no device IMEI, an expiry_date already passed, or no expiry_date at all. Expired vehicles must never appear in any answer. If the user's question is specifically about EXPIRED / inactive / deactivated / blocked vehicles (e.g. "how many are expired", "list inactive vehicles"), do NOT build or run a query — it can only ever come back empty; instead refuse briefly (you cover active vehicles only). Treat "vehicles" as active vehicles; do NOT add these conditions yourself. Records that link to a NON-active vehicle (e.g. alerts/events/trips whose vehicle isn't active) are EXCLUDED — the server inner-joins Asset, so such rows are dropped entirely (you won't see blank-plate orphan rows).
 - Data-source preference (choose silently; never ask the user which source to use):
   1. OVERALL / all-time entity KPIs come from the entity's OWN collection. For a driver's overall scores/metrics (safety score, behavior score, performance rating, all-time average speed, total trips/distance/hours, harsh-event counts) read directly from Driver.driver_analytics / Driver.analytics / Driver.behavior / Driver.performance — do NOT recompute them from Trip or DailyAnalytics.
@@ -165,11 +159,6 @@ RULES = """QUERY RULES:
 
 def _format_example(ex: Example) -> str:
     return f"Q: {ex.question}\n{ex.query}"
-
-
-def select_examples(sections: List[str], intent: Optional[str], k: int = 3) -> List[str]:
-    """Keyword fallback: the k most relevant examples by tag/collection/word overlap, formatted."""
-    return [_format_example(ex) for ex in _select_example_items(sections, intent, k)]
 
 
 def _select_example_items(sections: List[str], intent: Optional[str], k: int = 3) -> List[Example]:

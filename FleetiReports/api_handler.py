@@ -4,7 +4,6 @@ Handles external API calls to fetch reports
 """
 
 from typing import Dict, Any, Optional
-from datetime import datetime
 import logging
 import httpx
 from .config import settings
@@ -51,25 +50,6 @@ class APIHandler:
             "Authorization": f"Bearer {self.access_token}",
             "Content-Type": "application/json"
         }
-    
-    def _format_date_to_iso(self, date_str: str) -> str:
-        """
-        Convert date string to ISO 8601 format
-        
-        Args:
-            date_str: Date string in various formats
-            
-        Returns:
-            ISO 8601 formatted date string
-        """
-        # For now, return as-is. In production, you'd parse and convert
-        # This is a placeholder for date formatting logic
-        try:
-            # Try to parse common date formats
-            # Add your date parsing logic here based on expected formats
-            return date_str
-        except Exception:
-            return date_str
     
     async def call_report_api(
         self, 
